@@ -1,5 +1,21 @@
 # Ambiente de desenvolvimento (hot reload)
 services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: jobhunter
+      POSTGRES_PASSWORD: jobhunter
+      POSTGRES_DB: jobhunter
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobhunter -d jobhunter"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build:
       context: ./backend
@@ -10,9 +26,21 @@ services:
       PORT: 3000
       CORS_ORIGIN: http://localhost:5173
       TSC_WATCHFILE: DynamicPriorityPolling
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: jobhunter
+      DB_PASSWORD: jobhunter
+      DB_NAME: jobhunter
+      # segredo apenas para desenvolvimento; em produção use um valor aleatório
+      JWT_SECRET: dev-only-secret-change-me
+      JWT_EXPIRES_IN: 1d
+      UPLOAD_DIR: uploads
     volumes:
       - ./backend:/app
       - /app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
 
   frontend:
     build:
@@ -28,3 +56,6 @@ services:
       - /app/node_modules
     depends_on:
       - backend
+
+volumes:
+  db-data:
