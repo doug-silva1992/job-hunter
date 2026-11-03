@@ -2,7 +2,6 @@ import AssignmentTurnedInOutlined from '@mui/icons-material/AssignmentTurnedInOu
 import DashboardOutlined from '@mui/icons-material/DashboardOutlined'
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined'
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined'
-import TravelExploreOutlined from '@mui/icons-material/TravelExploreOutlined'
 import WorkOutlineOutlined from '@mui/icons-material/WorkOutlineOutlined'
 import Box from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
@@ -10,55 +9,42 @@ import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
-import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router'
 import { ApiStatus } from './ApiStatus'
+import { Logo } from './Logo'
 
 export const SIDEBAR_WIDTH = 248
 
-const menu: { label: string; icon: ReactNode }[] = [
-  { label: 'Dashboard', icon: <DashboardOutlined /> },
-  { label: 'Vagas', icon: <WorkOutlineOutlined /> },
-  { label: 'Currículos', icon: <DescriptionOutlined /> },
-  { label: 'Candidaturas', icon: <AssignmentTurnedInOutlined /> },
-  { label: 'Configurações', icon: <SettingsOutlined /> },
+const menu: { label: string; path: string; icon: ReactNode }[] = [
+  { label: 'Dashboard', path: '/', icon: <DashboardOutlined /> },
+  { label: 'Vagas', path: '/vagas', icon: <WorkOutlineOutlined /> },
+  { label: 'Currículos', path: '/curriculos', icon: <DescriptionOutlined /> },
+  { label: 'Candidaturas', path: '/candidaturas', icon: <AssignmentTurnedInOutlined /> },
+  { label: 'Configurações', path: '/configuracoes', icon: <SettingsOutlined /> },
 ]
 
-type Props = {
-  selected: string
-  onSelect: (label: string) => void
-  mobileOpen: boolean
-  onMobileClose: () => void
-}
+type Props = { mobileOpen: boolean; onMobileClose: () => void }
 
-function SidebarContent({ selected, onSelect }: Pick<Props, 'selected' | 'onSelect'>) {
+function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+  const { pathname } = useLocation()
+  const navigate = useNavigate()
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', p: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 1, py: 1.5, mb: 2 }}>
-        <Box
-          sx={{
-            width: 34,
-            height: 34,
-            borderRadius: 2,
-            bgcolor: 'primary.main',
-            color: 'primary.contrastText',
-            display: 'grid',
-            placeItems: 'center',
-          }}
-        >
-          <TravelExploreOutlined fontSize="small" />
-        </Box>
-        <Typography variant="h6" component="span">
-          Job Hunter
-        </Typography>
+      <Box sx={{ px: 1, py: 1.5, mb: 2 }}>
+        <Logo />
       </Box>
 
       <List component="nav" aria-label="Menu principal" sx={{ display: 'grid', gap: 0.5 }}>
         {menu.map((item) => (
           <ListItemButton
-            key={item.label}
-            selected={selected === item.label}
-            onClick={() => onSelect(item.label)}
+            key={item.path}
+            selected={pathname === item.path}
+            onClick={() => {
+              navigate(item.path)
+              onNavigate?.()
+            }}
           >
             <ListItemIcon sx={{ minWidth: 38 }}>{item.icon}</ListItemIcon>
             <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontWeight: 500, fontSize: 14 } } }} />
@@ -73,7 +59,7 @@ function SidebarContent({ selected, onSelect }: Pick<Props, 'selected' | 'onSele
   )
 }
 
-export function Sidebar({ selected, onSelect, mobileOpen, onMobileClose }: Props) {
+export function Sidebar({ mobileOpen, onMobileClose }: Props) {
   const paperSx = { width: SIDEBAR_WIDTH, boxSizing: 'border-box', borderColor: 'divider' } as const
 
   return (
@@ -85,20 +71,14 @@ export function Sidebar({ selected, onSelect, mobileOpen, onMobileClose }: Props
         ModalProps={{ keepMounted: true }}
         sx={{ display: { xs: 'block', md: 'none' }, '& .MuiDrawer-paper': paperSx }}
       >
-        <SidebarContent
-          selected={selected}
-          onSelect={(label) => {
-            onSelect(label)
-            onMobileClose()
-          }}
-        />
+        <SidebarContent onNavigate={onMobileClose} />
       </Drawer>
       <Drawer
         variant="permanent"
         open
         sx={{ display: { xs: 'none', md: 'block' }, '& .MuiDrawer-paper': paperSx }}
       >
-        <SidebarContent selected={selected} onSelect={onSelect} />
+        <SidebarContent />
       </Drawer>
     </Box>
   )

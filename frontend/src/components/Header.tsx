@@ -1,3 +1,4 @@
+import LogoutRounded from '@mui/icons-material/LogoutRounded'
 import MenuRounded from '@mui/icons-material/MenuRounded'
 import NotificationsNoneOutlined from '@mui/icons-material/NotificationsNoneOutlined'
 import SearchRounded from '@mui/icons-material/SearchRounded'
@@ -5,25 +6,33 @@ import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
+import ButtonBase from '@mui/material/ButtonBase'
+import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
-import { currentUser } from '../data/mock'
+import { useState } from 'react'
+import { useNavigate } from 'react-router'
+import { displayName, useAuth } from '../auth/context'
 
 type Props = {
   search: string
   onSearchChange: (value: string) => void
+  showSearch: boolean
   onMenuClick: () => void
 }
 
-export function Header({ search, onSearchChange, onMenuClick }: Props) {
-  const initials = currentUser.name
-    .split(' ')
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join('')
+export function Header({ search, onSearchChange, showSearch, onMenuClick }: Props) {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const email = user?.email ?? ''
+  const name = displayName(user)
 
   return (
     <AppBar
@@ -33,59 +42,84 @@ export function Header({ search, onSearchChange, onMenuClick }: Props) {
       sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}
     >
       <Toolbar sx={{ gap: 2, minHeight: { xs: 64 } }}>
-        <IconButton
-          edge="start"
-          aria-label="Abrir menu"
-          onClick={onMenuClick}
-          sx={{ display: { md: 'none' } }}
-        >
+        <IconButton edge="start" aria-label="Abrir menu" onClick={onMenuClick} sx={{ display: { md: 'none' } }}>
           <MenuRounded />
         </IconButton>
 
-        <TextField
-          size="small"
-          placeholder="Buscar vagas, empresas ou tecnologias…"
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          sx={{
-            flex: 1,
-            maxWidth: 520,
-            '& .MuiOutlinedInput-root': { bgcolor: 'background.default', borderRadius: 999 },
-            '& fieldset': { borderColor: 'transparent' },
-          }}
-          slotProps={{
-            htmlInput: { 'aria-label': 'Buscar vagas' },
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchRounded fontSize="small" />
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
+        {showSearch && (
+          <TextField
+            size="small"
+            placeholder="Buscar vagas, empresas ou tecnologias…"
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            sx={{
+              flex: 1,
+              maxWidth: 520,
+              '& .MuiOutlinedInput-root': { bgcolor: 'background.default', borderRadius: 999 },
+              '& fieldset': { borderColor: 'transparent' },
+            }}
+            slotProps={{
+              htmlInput: { 'aria-label': 'Buscar vagas' },
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRounded fontSize="small" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+        )}
 
-        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
           <IconButton aria-label="Notificações">
             <Badge color="primary" variant="dot">
               <NotificationsNoneOutlined />
             </Badge>
           </IconButton>
-          <Box sx={{ textAlign: 'right', display: { xs: 'none', sm: 'block' } }}>
-            <Typography variant="subtitle2" sx={{ lineHeight: 1.2 }}>
-              {currentUser.name}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {currentUser.title}
-            </Typography>
-          </Box>
-          <Avatar
-            alt={currentUser.name}
-            src="https://i.pravatar.cc/80?img=12"
-            sx={{ width: 38, height: 38, bgcolor: 'primary.main' }}
+
+          <ButtonBase
+            onClick={(e) => setAnchor(e.currentTarget)}
+            aria-label="Menu do usuário"
+            aria-haspopup="menu"
+            sx={{ borderRadius: 999, pl: { sm: 1.5 }, pr: 0.5, py: 0.5, gap: 1.5 }}
           >
-            {initials}
-          </Avatar>
+            <Typography variant="subtitle2" sx={{ display: { xs: 'none', sm: 'block' } }}>
+              {name}
+            </Typography>
+            <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', fontSize: 15, fontWeight: 600 }}>
+              {name.charAt(0).toUpperCase()}
+            </Avatar>
+          </ButtonBase>
+
+          <Menu
+            anchorEl={anchor}
+            open={anchor !== null}
+            onClose={() => setAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            slotProps={{ paper: { sx: { mt: 1, minWidth: 200 } } }}
+          >
+            <Box sx={{ px: 2, py: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                Conectado como
+              </Typography>
+              <Typography variant="subtitle2" sx={{ wordBreak: 'break-all' }}>{email}</Typography>
+            </Box>
+            <Divider />
+            <MenuItem
+              onClick={() => {
+                setAnchor(null)
+                logout()
+                navigate('/login', { replace: true })
+              }}
+            >
+              <ListItemIcon>
+                <LogoutRounded fontSize="small" />
+              </ListItemIcon>
+              Sair
+            </MenuItem>
+          </Menu>
         </Box>
       </Toolbar>
     </AppBar>

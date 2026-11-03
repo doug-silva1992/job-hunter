@@ -35,4 +35,3 @@ export const initialJobs: Job[] = [
   { id: 12, company: 'Polar Systems', role: 'Desenvolvedor React Sênior', location: 'Campinas, SP', workMode: 'Remoto', match: 92, tags: ['React', 'Node.js'], postedAt: 'há 3sem', stage: 'offer' },
 ]
 
-export const currentUser = { name: 'Douglas Valverde', title: 'Fullstack Developer' }
