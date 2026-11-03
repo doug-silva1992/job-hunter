@@ -1,0 +1,21 @@
+# Ambiente de produção: backend compilado + frontend servido pelo nginx
+services:
+  backend:
+    build:
+      context: ./backend
+      target: production
+    environment:
+      PORT: 3000
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      target: production
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
