@@ -23,7 +23,7 @@ ENV NODE_ENV=production
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-RUN mkdir -p /app/uploads && chown node:node /app/uploads
+RUN mkdir -p /app/storage/curriculos && chown -R node:node /app/storage
 USER node
 EXPOSE 3000
 CMD ["node", "dist/main"]

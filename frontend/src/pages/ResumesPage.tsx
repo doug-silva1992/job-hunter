@@ -1,6 +1,8 @@
+import CloseRounded from '@mui/icons-material/CloseRounded'
 import CloudUploadOutlined from '@mui/icons-material/CloudUploadOutlined'
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded'
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined'
+import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded'
 import FileDownloadOutlined from '@mui/icons-material/FileDownloadOutlined'
 import PictureAsPdfOutlined from '@mui/icons-material/PictureAsPdfOutlined'
 import StarOutlineRounded from '@mui/icons-material/StarOutlineRounded'
@@ -10,25 +12,28 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
+import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import LinearProgress from '@mui/material/LinearProgress'
+import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { alpha } from '@mui/material/styles'
-import { Fragment, useEffect, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { ApiError } from '../api/client'
+import { resumesApi, type Resume } from '../api/resumes'
 
 const MAX_SIZE_MB = 5
 const ACCEPTED_EXT = ['.pdf', '.doc', '.docx']
 
-type Resume = {
-  id: string
-  file: File
-  uploadedAt: Date
-  progress: number // 0–100
-  primary: boolean
-}
+type Upload = { key: string; name: string; progress: number; error?: string }
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -36,6 +41,12 @@ function formatSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+function formatDate(iso: string) {
+  const d = new Date(iso)
+  return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+}
+
+/** Validação rápida no navegador; o backend valida de novo (inclusive o conteúdo). */
 function validate(file: File): string | null {
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
   if (!ACCEPTED_EXT.includes(ext)) return `"${file.name}" não é PDF ou Word.`
@@ -43,50 +54,94 @@ function validate(file: File): string | null {
   return null
 }
 
+const messageOf = (err: unknown) =>
+  err instanceof ApiError ? err.message : 'Não foi possível concluir a operação.'
+
+function FileIcon({ name }: { name: string }) {
+  const isPdf = name.toLowerCase().endsWith('.pdf')
+  return (
+    <Box
+      sx={{
+        width: 40,
+        height: 40,
+        borderRadius: 2,
+        flexShrink: 0,
+        display: 'grid',
+        placeItems: 'center',
+        color: isPdf ? '#C9372C' : 'primary.main',
+        bgcolor: isPdf ? '#C9372C14' : '#0A66C214',
+      }}
+    >
+      {isPdf ? <PictureAsPdfOutlined /> : <DescriptionOutlined />}
+    </Box>
+  )
+}
+
+function Row({ children }: { children: ReactNode }) {
+  return (
+    <Box sx={{ px: 2.5, py: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+      {children}
+    </Box>
+  )
+}
+
 export function ResumesPage() {
   const [resumes, setResumes] = useState<Resume[]>([])
-  const [errors, setErrors] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [uploads, setUploads] = useState<Upload[]>([])
+  const [invalidFiles, setInvalidFiles] = useState<string[]>([])
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [toDelete, setToDelete] = useState<Resume | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const timers = useRef<number[]>([])
 
-  useEffect(() => () => timers.current.forEach(clearInterval), [])
+  const load = useCallback(async () => {
+    try {
+      setResumes(await resumesApi.list())
+      setLoadError(null)
+    } catch (err) {
+      setLoadError(messageOf(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  // Upload simulado: o progresso avança localmente até existir um endpoint no backend.
-  function simulateUpload(id: string) {
-    const timer = window.setInterval(() => {
-      setResumes((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, progress: Math.min(100, r.progress + 20) } : r)),
-      )
-    }, 200)
-    timers.current.push(timer)
-    window.setTimeout(() => clearInterval(timer), 1100)
+  // carga inicial (ignora a resposta se a página já foi fechada)
+  useEffect(() => {
+    let active = true
+    resumesApi
+      .list()
+      .then((list) => active && setResumes(list))
+      .catch((err: unknown) => active && setLoadError(messageOf(err)))
+      .finally(() => active && setLoading(false))
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const patchUpload = (key: string, patch: Partial<Upload>) =>
+    setUploads((prev) => prev.map((u) => (u.key === key ? { ...u, ...patch } : u)))
+
+  async function uploadFile(file: File) {
+    const key = crypto.randomUUID()
+    setUploads((prev) => [{ key, name: file.name, progress: 0 }, ...prev])
+    try {
+      await resumesApi.upload(file, (progress) => patchUpload(key, { progress }))
+      setUploads((prev) => prev.filter((u) => u.key !== key))
+      setToast(`"${file.name}" enviado.`)
+      await load() // recarrega para refletir o currículo principal
+    } catch (err) {
+      patchUpload(key, { error: messageOf(err) })
+    }
   }
 
   function addFiles(list: FileList | null) {
     if (!list?.length) return
     const files = Array.from(list)
-    const problems = files.map(validate).filter((e): e is string => e !== null)
-    const valid = files.filter((f) => validate(f) === null)
-    setErrors(problems)
-
-    const added = valid.map((file) => ({
-      id: crypto.randomUUID(),
-      file,
-      uploadedAt: new Date(),
-      progress: 0,
-      primary: false,
-    }))
-    setResumes((prev) => {
-      const next = [...added, ...prev]
-      // o primeiro currículo enviado vira o principal automaticamente
-      if (next.length && !next.some((r) => r.primary)) {
-        const last = next.length - 1
-        next[last] = { ...next[last], primary: true }
-      }
-      return next
-    })
-    added.forEach((r) => simulateUpload(r.id))
+    setInvalidFiles(files.map(validate).filter((e): e is string => e !== null))
+    files.filter((f) => validate(f) === null).forEach((f) => void uploadFile(f))
   }
 
   function onDrop(e: DragEvent) {
@@ -95,26 +150,47 @@ export function ResumesPage() {
     addFiles(e.dataTransfer.files)
   }
 
-  function remove(id: string) {
-    setResumes((prev) => {
-      const next = prev.filter((r) => r.id !== id)
-      if (next.length && !next.some((r) => r.primary)) next[0] = { ...next[0], primary: true }
-      return next
+  async function runAction(id: string, action: () => Promise<void>) {
+    setBusyId(id)
+    try {
+      await action()
+    } catch (err) {
+      setToast(messageOf(err))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const makePrimary = (r: Resume) =>
+    runAction(r.id, async () => {
+      await resumesApi.setPrimary(r.id)
+      await load()
+      setToast(`"${r.originalName}" agora é o currículo principal.`)
+    })
+
+  const download = (r: Resume) =>
+    runAction(r.id, async () => {
+      const blob = await resumesApi.download(r.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = r.originalName
+      a.click()
+      URL.revokeObjectURL(url)
+    })
+
+  function confirmDelete() {
+    const r = toDelete
+    if (!r) return
+    setToDelete(null)
+    void runAction(r.id, async () => {
+      await resumesApi.remove(r.id)
+      await load()
+      setToast(`"${r.originalName}" removido.`)
     })
   }
 
-  function makePrimary(id: string) {
-    setResumes((prev) => prev.map((r) => ({ ...r, primary: r.id === id })))
-  }
-
-  function download(file: File) {
-    const url = URL.createObjectURL(file)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = file.name
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+  const total = resumes.length
 
   return (
     <>
@@ -181,11 +257,15 @@ export function ResumesPage() {
         />
       </Card>
 
-      {errors.length > 0 && (
-        <Alert severity="warning" onClose={() => setErrors([])}>
-          {errors.length === 1 ? errors[0] : (
+      {invalidFiles.length > 0 && (
+        <Alert severity="warning" onClose={() => setInvalidFiles([])}>
+          {invalidFiles.length === 1 ? (
+            invalidFiles[0]
+          ) : (
             <Box component="ul" sx={{ m: 0, pl: 2 }}>
-              {errors.map((e) => <li key={e}>{e}</li>)}
+              {invalidFiles.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
             </Box>
           )}
         </Alert>
@@ -196,92 +276,162 @@ export function ResumesPage() {
           <Typography variant="h6" component="h2">
             Meus currículos
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {resumes.length} {resumes.length === 1 ? 'arquivo' : 'arquivos'}
-          </Typography>
+          {!loading && !loadError && (
+            <Typography variant="body2" color="text.secondary">
+              {total} {total === 1 ? 'arquivo' : 'arquivos'}
+            </Typography>
+          )}
         </Box>
         <Divider />
 
-        {resumes.length === 0 ? (
+        {loading ? (
+          <Stack sx={{ alignItems: 'center', py: 6 }}>
+            <CircularProgress size={28} aria-label="Carregando currículos" />
+          </Stack>
+        ) : loadError ? (
+          <Box sx={{ p: 2.5 }}>
+            <Alert
+              severity="error"
+              action={
+                <Button color="inherit" size="small" onClick={() => void load()}>
+                  Tentar novamente
+                </Button>
+              }
+            >
+              {loadError}
+            </Alert>
+          </Box>
+        ) : total === 0 && uploads.length === 0 ? (
           <Stack sx={{ alignItems: 'center', py: 6, gap: 1, color: 'text.secondary' }}>
             <DescriptionOutlined />
             <Typography variant="body2">Nenhum currículo enviado ainda.</Typography>
           </Stack>
         ) : (
           <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
-            {resumes.map((r, i) => {
-              const isPdf = r.file.name.toLowerCase().endsWith('.pdf')
-              const uploading = r.progress < 100
-              return (
-                <Fragment key={r.id}>
-                  {i > 0 && <Divider component="li" aria-hidden />}
-                  <Box component="li" sx={{ px: 2.5, py: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Box
-                      sx={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 2,
-                        flexShrink: 0,
-                        display: 'grid',
-                        placeItems: 'center',
-                        color: isPdf ? '#C9372C' : 'primary.main',
-                        bgcolor: isPdf ? '#C9372C14' : '#0A66C214',
-                      }}
-                    >
-                      {isPdf ? <PictureAsPdfOutlined /> : <DescriptionOutlined />}
-                    </Box>
+            {uploads.map((u) => (
+              <Box key={u.key} component="li" sx={{ borderBottom: 1, borderColor: 'divider', listStyle: 'none' }}>
+                <Box sx={{ px: 2.5, py: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <FileIcon name={u.name} />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="subtitle2" noWrap>
+                      {u.name}
+                    </Typography>
+                    {u.error ? (
+                      <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center', color: 'error.main' }}>
+                        <ErrorOutlineRounded sx={{ fontSize: 16 }} />
+                        <Typography variant="caption">{u.error}</Typography>
+                      </Stack>
+                    ) : (
+                      <LinearProgress
+                        variant="determinate"
+                        value={u.progress}
+                        aria-label={`Enviando ${u.name}`}
+                        sx={{ mt: 1, borderRadius: 999, maxWidth: 280 }}
+                      />
+                    )}
+                  </Box>
+                  {u.error && (
+                    <Tooltip title="Dispensar">
+                      <IconButton
+                        aria-label="Dispensar"
+                        onClick={() => setUploads((prev) => prev.filter((x) => x.key !== u.key))}
+                      >
+                        <CloseRounded />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </Box>
+              </Box>
+            ))}
 
+            {resumes.map((r, i) => {
+              const busy = busyId === r.id
+              return (
+                <Box key={r.id} component="li" sx={{ listStyle: 'none' }}>
+                  {i > 0 && <Divider />}
+                  <Row>
+                    <FileIcon name={r.originalName} />
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Stack direction="row" sx={{ alignItems: 'center', gap: 1, minWidth: 0 }}>
                         <Typography variant="subtitle2" noWrap>
-                          {r.file.name}
+                          {r.originalName}
                         </Typography>
-                        {r.primary && <Chip label="Principal" size="small" color="primary" sx={{ height: 20, fontSize: 11 }} />}
+                        {r.isPrimary && (
+                          <Chip label="Principal" size="small" color="primary" sx={{ height: 20, fontSize: 11, flexShrink: 0 }} />
+                        )}
                       </Stack>
-                      {uploading ? (
-                        <LinearProgress variant="determinate" value={r.progress} sx={{ mt: 1, borderRadius: 999, maxWidth: 280 }} />
-                      ) : (
-                        <Typography variant="caption" color="text.secondary">
-                          {formatSize(r.file.size)} · enviado em{' '}
-                          {r.uploadedAt.toLocaleDateString('pt-BR')} às{' '}
-                          {r.uploadedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                        </Typography>
-                      )}
+                      <Typography variant="caption" color="text.secondary">
+                        {formatSize(r.sizeBytes)} · enviado em {formatDate(r.createdAt)}
+                      </Typography>
                     </Box>
 
-                    <Stack direction="row" sx={{ gap: 0.5, flexShrink: 0 }}>
-                      <Tooltip title={r.primary ? 'Currículo principal' : 'Definir como principal'}>
-                        <span>
-                          <IconButton
-                            aria-label="Definir como principal"
-                            onClick={() => makePrimary(r.id)}
-                            disabled={uploading || r.primary}
-                            color={r.primary ? 'primary' : 'default'}
-                          >
-                            {r.primary ? <StarRounded /> : <StarOutlineRounded />}
-                          </IconButton>
-                        </span>
-                      </Tooltip>
+                    <Stack direction="row" sx={{ gap: 0.5, flexShrink: 0, alignItems: 'center' }}>
+                      {busy && <CircularProgress size={18} sx={{ mr: 1 }} aria-label="Processando" />}
+                      {r.isPrimary ? (
+                        <Tooltip title="Currículo principal">
+                          <Box sx={{ width: 40, height: 40, display: 'grid', placeItems: 'center', color: 'primary.main' }}>
+                            <StarRounded aria-label="Currículo principal" />
+                          </Box>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip title="Definir como principal">
+                          <span>
+                            <IconButton
+                              aria-label="Definir como principal"
+                              onClick={() => void makePrimary(r)}
+                              disabled={busy}
+                            >
+                              <StarOutlineRounded />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      )}
                       <Tooltip title="Baixar">
                         <span>
-                          <IconButton aria-label="Baixar" onClick={() => download(r.file)} disabled={uploading}>
+                          <IconButton aria-label="Baixar" onClick={() => void download(r)} disabled={busy}>
                             <FileDownloadOutlined />
                           </IconButton>
                         </span>
                       </Tooltip>
                       <Tooltip title="Remover">
-                        <IconButton aria-label="Remover" onClick={() => remove(r.id)}>
-                          <DeleteOutlineRounded />
-                        </IconButton>
+                        <span>
+                          <IconButton aria-label="Remover" onClick={() => setToDelete(r)} disabled={busy}>
+                            <DeleteOutlineRounded />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                     </Stack>
-                  </Box>
-                </Fragment>
+                  </Row>
+                </Box>
               )
             })}
           </Box>
         )}
       </Card>
+
+      <Dialog open={toDelete !== null} onClose={() => setToDelete(null)}>
+        <DialogTitle>Remover currículo?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            "{toDelete?.originalName}" será excluído permanentemente.
+            {toDelete?.isPrimary && ' Como ele é o principal, o currículo mais recente passa a ser o principal.'}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setToDelete(null)}>Cancelar</Button>
+          <Button color="error" variant="contained" onClick={confirmDelete}>
+            Remover
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={toast !== null}
+        autoHideDuration={3500}
+        onClose={() => setToast(null)}
+        message={toast}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </>
   )
 }

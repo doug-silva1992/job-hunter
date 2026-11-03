@@ -27,7 +27,7 @@ export class ResumesService implements OnModuleInit {
     private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
-    this.uploadDir = resolve(config.get('UPLOAD_DIR', 'uploads'));
+    this.uploadDir = resolve(config.get('UPLOAD_DIR', 'storage/curriculos'));
   }
 
   async onModuleInit() {
@@ -52,7 +52,9 @@ export class ResumesService implements OnModuleInit {
     const inspected = inspectResumeFile(file.originalname, file.buffer);
     if (typeof inspected === 'string') throw new BadRequestException(inspected);
 
-    const storageKey = `${randomUUID()}${inspected.extension}`;
+    // um subdiretório por usuário: storage/curriculos/<userId>/<uuid>.pdf
+    await mkdir(join(this.uploadDir, userId), { recursive: true });
+    const storageKey = `${userId}/${randomUUID()}${inspected.extension}`;
     await writeFile(join(this.uploadDir, storageKey), file.buffer);
 
     const data = {
@@ -110,9 +112,11 @@ export class ResumesService implements OnModuleInit {
     await this.deleteFiles([resume.storageKey]);
   }
 
-  async storageKeysOf(userId: string): Promise<string[]> {
-    const rows = await this.repo.find({ where: { userId }, select: { storageKey: true } });
-    return rows.map((r) => r.storageKey);
+  /** Apaga a pasta de currículos do usuário (usado ao excluir a conta). */
+  async deleteUserFolder(userId: string): Promise<void> {
+    await rm(join(this.uploadDir, userId), { recursive: true, force: true }).catch((error: unknown) =>
+      this.logger.warn(`Não foi possível apagar a pasta do usuário ${userId}: ${String(error)}`),
+    );
   }
 
   async deleteFiles(storageKeys: string[]): Promise<void> {

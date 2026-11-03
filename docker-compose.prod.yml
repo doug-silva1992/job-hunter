@@ -29,9 +29,9 @@ services:
       DB_NAME: ${DB_NAME:-jobhunter}
       JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no .env}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
-      UPLOAD_DIR: /app/uploads
+      UPLOAD_DIR: /app/storage/curriculos
     volumes:
-      - uploads:/app/uploads
+      - curriculos:/app/storage/curriculos
     expose:
       - "3000"
     depends_on:
@@ -51,4 +51,4 @@ services:
 
 volumes:
   db-data:
-  uploads:
+  curriculos:

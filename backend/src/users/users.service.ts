@@ -71,9 +71,8 @@ export class UsersService {
 
   /** Exclui a conta; currículos e vagas saem junto (ON DELETE CASCADE) e os arquivos são apagados do disco. */
   async remove(userId: string): Promise<void> {
-    const storageKeys = await this.resumes.storageKeysOf(userId);
     await this.repo.delete({ id: userId });
-    await this.resumes.deleteFiles(storageKeys);
+    await this.resumes.deleteUserFolder(userId);
   }
 
   private async assertAvailable(fields: { username?: string; email?: string }, exceptId?: string) {

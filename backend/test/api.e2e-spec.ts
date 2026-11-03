@@ -6,7 +6,7 @@
  *   DB_HOST=... DB_NAME=jobhunter_test JWT_SECRET=x npm run test:e2e
  */
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
@@ -267,11 +267,15 @@ describe('Job Hunter API (e2e)', () => {
     });
   });
 
-  it('excluir a conta invalida o token e remove os dados', async () => {
-    const { accessToken } = await register();
+  it('excluir a conta invalida o token e remove os dados e a pasta de currículos', async () => {
+    const { accessToken, user } = await register();
     const h = auth(accessToken);
     await http().post('/api/resumes').set(h).attach('file', PDF, 'cv.pdf').expect(201);
+    const userFolder = join(uploadDir, user.id);
+    expect(await readdir(userFolder)).toHaveLength(1);
+
     await http().delete('/api/users/me').set(h).expect(204);
     await http().get('/api/users/me').set(h).expect(401);
+    await expect(readdir(userFolder)).rejects.toThrow();
   });
 });

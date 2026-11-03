@@ -16,7 +16,20 @@ Job Hunter é uma plataforma que utiliza IA para encontrar, analisar e classific
 - Em desenvolvimento, o servidor do Vite encaminha (proxy) toda requisição para `/api` ao backend. O destino vem da variável `API_PROXY_TARGET` (padrão: `http://localhost:3000`). Assim o frontend sempre chama caminhos relativos, como `fetch('/api/health')`, sem se preocupar com CORS ou URL do backend.
 - Em produção, o nginx serve o build do frontend e faz o mesmo papel do proxy, repassando `/api` para o backend.
 
-> O frontend ainda usa dados simulados (login, vagas e currículos); as APIs abaixo já estão prontas para a integração.
+### O que já está integrado
+
+| Tela        | Situação                                                                 |
+| ----------- | ------------------------------------------------------------------------ |
+| Criar conta | `POST /api/auth/register`                                                |
+| Entrar      | `POST /api/auth/login`; a sessão (JWT) é revalidada em `GET /api/users/me` ao abrir o app e expira para o login se o token for inválido |
+| Currículos  | listar, enviar (com progresso), definir principal, baixar e remover via `/api/resumes` |
+| Dashboard   | ainda usa dados simulados (vagas, métricas e kanban)                     |
+
+O cliente HTTP fica em [frontend/src/api/](frontend/src/api/).
+
+### Onde ficam os currículos
+
+Os arquivos são gravados em **`backend/storage/curriculos/<id do usuário>/<uuid>.<ext>`**. O nome original fica só no banco (tabela `resumes`). A pasta do usuário é apagada quando ele exclui a conta. O conteúdo da pasta não vai para o git.
 
 ## Banco de dados e migrations
 
@@ -98,7 +111,7 @@ docker compose -f docker-compose.prod.yml -p job-hunter-prod exec backend npm ru
 - Aplicação: http://localhost:8080
 - Swagger: http://localhost:8080/api/docs
 
-O backend roda compilado (`node dist/main`) e não é exposto diretamente; o acesso é feito pelo nginx do frontend. Os currículos enviados ficam no volume `uploads`. Use `-p job-hunter-prod` para que as imagens de produção não sobrescrevam as de desenvolvimento.
+O backend roda compilado (`node dist/main`) e não é exposto diretamente; o acesso é feito pelo nginx do frontend. Os currículos enviados ficam no volume `curriculos` (montado em `/app/storage/curriculos`). Use `-p job-hunter-prod` para que as imagens de produção não sobrescrevam as de desenvolvimento.
 
 Para parar: `docker compose down` (ou `docker compose -f docker-compose.prod.yml -p job-hunter-prod down`).
 
@@ -130,7 +143,7 @@ npm run dev
 | `DB_USER` / `DB_PASSWORD` / `DB_NAME` | backend | `jobhunter`  | Credenciais e nome do banco                     |
 | `JWT_SECRET`          | backend  | **obrigatório**         | Segredo para assinar os tokens                  |
 | `JWT_EXPIRES_IN`      | backend  | `1d`                    | Validade do token                               |
-| `UPLOAD_DIR`          | backend  | `uploads`               | Pasta onde os currículos são gravados           |
+| `UPLOAD_DIR`          | backend  | `storage/curriculos`    | Pasta onde os currículos são gravados           |
 | `API_PROXY_TARGET`    | frontend | `http://localhost:3000` | Destino do proxy `/api` do Vite                 |
 | `CHOKIDAR_USEPOLLING` | frontend | —                       | `true` para hot reload em volumes Docker        |
 | `TSC_WATCHFILE`       | backend  | —                       | Modo de watch do TypeScript (polling no Docker) |

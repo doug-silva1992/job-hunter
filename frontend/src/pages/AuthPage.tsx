@@ -13,6 +13,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useState, type FormEvent } from 'react'
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router'
+import { ApiError } from '../api/client'
 import { PASSWORD_MIN, useAuth, validateCredentials, validateRegistration } from '../auth/context'
 import { Logo } from '../components/Logo'
 
@@ -74,8 +75,9 @@ export function AuthPage({ mode }: { mode: Mode }) {
       else await login(email, password)
       const from = (location.state as { from?: string } | null)?.from
       navigate(from && from !== '/login' ? from : '/', { replace: true })
-    } catch {
-      setError('Não foi possível concluir. Tente novamente.')
+    } catch (err) {
+      // ex.: "E-mail ou senha inválidos.", "Este e-mail já está cadastrado."
+      setError(err instanceof ApiError ? err.message : 'Não foi possível concluir. Tente novamente.')
       setSubmitting(false)
     }
   }

@@ -3,4 +3,5 @@ dist/
 coverage/
 .env
 *.log
-uploads/
+backend/storage/curriculos/*
+!backend/storage/curriculos/.gitkeep

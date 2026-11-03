@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 
-export type User = { email: string; username?: string }
+/** Usuário retornado pela API (POST /auth/*, GET /users/me). */
+export type User = { id: string; username: string; email: string; createdAt: string }
 
 export type AuthContextValue = {
   user: User | null
@@ -17,6 +18,7 @@ export function useAuth() {
   return ctx
 }
 
+// Mesmas regras do backend (backend/src/common/validation.ts).
 export const EMAIL_RULE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 export const USERNAME_RULE = /^[a-zA-Z0-9._-]{3,30}$/
 export const PASSWORD_MIN = 6
@@ -25,10 +27,8 @@ export function normalizeEmail(email: string) {
   return email.trim().toLowerCase()
 }
 
-/** Nome de usuário, se houver; senão a parte do e-mail antes do "@". */
 export function displayName(user: User | null) {
-  if (!user) return ''
-  return user.username || user.email.split('@')[0]
+  return user?.username ?? ''
 }
 
 type Errors = { username?: string; email?: string; password?: string }
