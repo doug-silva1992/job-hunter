@@ -3,6 +3,7 @@ import CloudUploadOutlined from '@mui/icons-material/CloudUploadOutlined'
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded'
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined'
 import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded'
+import FactCheckOutlined from '@mui/icons-material/FactCheckOutlined'
 import FileDownloadOutlined from '@mui/icons-material/FileDownloadOutlined'
 import PictureAsPdfOutlined from '@mui/icons-material/PictureAsPdfOutlined'
 import StarOutlineRounded from '@mui/icons-material/StarOutlineRounded'
@@ -29,6 +30,7 @@ import { alpha } from '@mui/material/styles'
 import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { ApiError } from '../api/client'
 import { resumesApi, type Resume } from '../api/resumes'
+import { AtsDialog } from '../components/AtsDialog'
 
 const MAX_SIZE_MB = 5
 const ACCEPTED_EXT = ['.pdf', '.doc', '.docx']
@@ -93,6 +95,7 @@ export function ResumesPage() {
   const [invalidFiles, setInvalidFiles] = useState<string[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
   const [toDelete, setToDelete] = useState<Resume | null>(null)
+  const [evaluating, setEvaluating] = useState<Resume | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -386,6 +389,17 @@ export function ResumesPage() {
                           </span>
                         </Tooltip>
                       )}
+                      <Tooltip title={r.ats ? 'Avaliar currículo' : 'Avaliação ainda não disponível'}>
+                        <span>
+                          <IconButton
+                            aria-label="Avaliar currículo"
+                            onClick={() => setEvaluating(r)}
+                            disabled={busy || !r.ats}
+                          >
+                            <FactCheckOutlined />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
                       <Tooltip title="Baixar">
                         <span>
                           <IconButton aria-label="Baixar" onClick={() => void download(r)} disabled={busy}>
@@ -424,6 +438,13 @@ export function ResumesPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <AtsDialog
+        open={evaluating !== null}
+        fileName={evaluating?.originalName ?? ''}
+        ats={evaluating?.ats ?? null}
+        onClose={() => setEvaluating(null)}
+      />
 
       <Snackbar
         open={toast !== null}

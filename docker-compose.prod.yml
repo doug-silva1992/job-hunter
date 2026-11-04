@@ -30,6 +30,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no .env}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
       UPLOAD_DIR: /app/storage/curriculos
+      N8N_ATS_WEBHOOK_URL: ${N8N_ATS_WEBHOOK_URL:?Defina N8N_ATS_WEBHOOK_URL no .env}
     volumes:
       - curriculos:/app/storage/curriculos
     expose:

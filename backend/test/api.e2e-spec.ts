@@ -6,14 +6,16 @@
  *   DB_HOST=... DB_NAME=jobhunter_test JWT_SECRET=x npm run test:e2e
  */
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { DataSource } from 'typeorm';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module.js';
+import { Resume } from '../src/resumes/resume.entity.js';
 import { configureApp } from '../src/setup.js';
 
 const PDF = Buffer.from('%PDF-1.4\n% teste\n');
@@ -38,10 +40,28 @@ describe('Job Hunter API (e2e)', () => {
 
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
+  /** O upload agora vai para o n8n; para testar as demais rotas, grava o currículo direto no banco/disco. */
+  async function seedResume(userId: string, originalName: string, isPrimary: boolean) {
+    const storageKey = `${userId}/${randomUUID()}.pdf`;
+    await mkdir(join(uploadDir, userId), { recursive: true });
+    await writeFile(join(uploadDir, storageKey), PDF);
+    const repo = app.get(DataSource).getRepository(Resume);
+    return repo.save(
+      repo.create({ userId, storageKey, originalName, mimeType: 'application/pdf', sizeBytes: PDF.length, isPrimary }),
+    );
+  }
+
+  function mockN8n(response: Response | Error) {
+    return vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => (response instanceof Error ? Promise.reject(response) : Promise.resolve(response)));
+  }
+
   beforeAll(async () => {
     uploadDir = await mkdtemp(join(tmpdir(), 'jobhunter-e2e-'));
     process.env.UPLOAD_DIR = uploadDir;
     process.env.JWT_SECRET ??= 'e2e-secret';
+    process.env.N8N_ATS_WEBHOOK_URL = 'http://n8n.test/webhook/ats-check';
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
@@ -207,26 +227,78 @@ describe('Job Hunter API (e2e)', () => {
   });
 
   describe('resumes', () => {
-    it('upload, principal automático, troca de principal, download e remoção', async () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('upload envia o arquivo em multipart/form-data para o webhook do n8n e devolve a resposta dele', async () => {
+      const { accessToken, user } = await register();
+      const fetchMock = mockN8n(Response.json({ score: 87 }));
+
+      const res = await http()
+        .post('/api/resumes')
+        .set(auth(accessToken))
+        .attach('file', PDF, 'currículo-frontend.pdf')
+        .expect(201);
+      expect(res.body).toEqual({ score: 87 });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(process.env.N8N_ATS_WEBHOOK_URL);
+      expect(init.method).toBe('POST');
+      expect(init.body).toBeInstanceOf(FormData);
+      const form = init.body as FormData;
+      const sent = form.get('data') as File;
+      expect(sent.name).toBe('currículo-frontend.pdf');
+      expect(sent.type).toBe('application/pdf');
+      expect(sent.size).toBe(PDF.length);
+      expect(Buffer.from(await sent.arrayBuffer()).equals(PDF)).toBe(true);
+      expect(form.get('userId')).toBe(user.id);
+      expect([...form.keys()].sort()).toEqual(['data', 'userId']);
+
+      // nada é gravado no banco
+      const list = await http().get('/api/resumes').set(auth(accessToken)).expect(200);
+      expect(list.body).toEqual([]);
+    });
+
+    it('retorna 502 quando o n8n está fora do ar ou responde erro', async () => {
       const { accessToken } = await register();
       const h = auth(accessToken);
+      mockN8n(new TypeError('fetch failed'));
+      await http().post('/api/resumes').set(h).attach('file', PDF, 'cv.pdf').expect(502);
+      mockN8n(new Response('boom', { status: 500 }));
+      await http().post('/api/resumes').set(h).attach('file', PDF, 'cv.pdf').expect(502);
+    });
 
-      const first = await http().post('/api/resumes').set(h).attach('file', PDF, 'currículo-frontend.pdf').expect(201);
-      expect(first.body).toMatchObject({ originalName: 'currículo-frontend.pdf', mimeType: 'application/pdf', isPrimary: true });
-      expect(first.body).not.toHaveProperty('storageKey');
+    it('rejeita arquivos inválidos sem chamar o n8n', async () => {
+      const { accessToken } = await register();
+      const h = auth(accessToken);
+      const fetchMock = mockN8n(Response.json({}));
+      await http().post('/api/resumes').set(h).expect(400); // sem arquivo
+      await http().post('/api/resumes').set(h).attach('file', PDF, 'foto.png').expect(400);
+      await http().post('/api/resumes').set(h).attach('file', Buffer.from('MZ...'), 'falso.pdf').expect(400);
+      await http()
+        .post('/api/resumes')
+        .set(h)
+        .attach('file', Buffer.concat([PDF, Buffer.alloc(5 * 1024 * 1024)]), 'grande.pdf')
+        .expect(413);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
 
-      const second = await http().post('/api/resumes').set(h).attach('file', PDF, 'backend.pdf').expect(201);
-      expect(second.body.isPrimary).toBe(false);
+    it('troca de principal, download e remoção', async () => {
+      const { accessToken, user } = await register();
+      const h = auth(accessToken);
+      const first = await seedResume(user.id, 'currículo-frontend.pdf', true);
+      const second = await seedResume(user.id, 'backend.pdf', false);
 
-      await http().patch(`/api/resumes/${second.body.id}/primary`).set(h).expect(200);
+      await http().patch(`/api/resumes/${second.id}/primary`).set(h).expect(200);
       const list = await http().get('/api/resumes').set(h).expect(200);
       expect(list.body.map((r: { id: string; isPrimary: boolean }) => [r.id, r.isPrimary])).toEqual([
-        [second.body.id, true],
-        [first.body.id, false],
+        [second.id, true],
+        [first.id, false],
       ]);
+      expect(list.body[0]).not.toHaveProperty('storageKey');
 
       const file = await http()
-        .get(`/api/resumes/${first.body.id}/download`)
+        .get(`/api/resumes/${first.id}/download`)
         .set(h)
         .buffer(true)
         .parse((res, cb) => {
@@ -240,37 +312,24 @@ describe('Job Hunter API (e2e)', () => {
       expect(Buffer.compare(file.body as Buffer, PDF)).toBe(0);
 
       // remover o principal promove o mais recente restante
-      await http().delete(`/api/resumes/${second.body.id}`).set(h).expect(204);
-      const after = await http().get(`/api/resumes/${first.body.id}`).set(h).expect(200);
+      await http().delete(`/api/resumes/${second.id}`).set(h).expect(204);
+      const after = await http().get(`/api/resumes/${first.id}`).set(h).expect(200);
       expect(after.body.isPrimary).toBe(true);
-    });
-
-    it('rejeita arquivos inválidos', async () => {
-      const { accessToken } = await register();
-      const h = auth(accessToken);
-      await http().post('/api/resumes').set(h).expect(400); // sem arquivo
-      await http().post('/api/resumes').set(h).attach('file', PDF, 'foto.png').expect(400);
-      await http().post('/api/resumes').set(h).attach('file', Buffer.from('MZ...'), 'falso.pdf').expect(400);
-      await http()
-        .post('/api/resumes')
-        .set(h)
-        .attach('file', Buffer.concat([PDF, Buffer.alloc(5 * 1024 * 1024)]), 'grande.pdf')
-        .expect(413);
     });
 
     it('um usuário não acessa os currículos de outro', async () => {
       const alice = await register();
       const bob = await register();
-      const up = await http().post('/api/resumes').set(auth(alice.accessToken)).attach('file', PDF, 'cv.pdf').expect(201);
-      await http().get(`/api/resumes/${up.body.id}/download`).set(auth(bob.accessToken)).expect(404);
-      await http().delete(`/api/resumes/${up.body.id}`).set(auth(bob.accessToken)).expect(404);
+      const resume = await seedResume(alice.user.id, 'cv.pdf', true);
+      await http().get(`/api/resumes/${resume.id}/download`).set(auth(bob.accessToken)).expect(404);
+      await http().delete(`/api/resumes/${resume.id}`).set(auth(bob.accessToken)).expect(404);
     });
   });
 
   it('excluir a conta invalida o token e remove os dados e a pasta de currículos', async () => {
     const { accessToken, user } = await register();
     const h = auth(accessToken);
-    await http().post('/api/resumes').set(h).attach('file', PDF, 'cv.pdf').expect(201);
+    await seedResume(user.id, 'cv.pdf', true);
     const userFolder = join(uploadDir, user.id);
     expect(await readdir(userFolder)).toHaveLength(1);
 

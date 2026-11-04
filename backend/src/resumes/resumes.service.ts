@@ -1,8 +1,8 @@
 import { createReadStream } from 'node:fs';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { mkdir, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import {
+  BadGatewayException,
   BadRequestException,
   Injectable,
   Logger,
@@ -13,14 +13,19 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { ReadStream } from 'node:fs';
 import { DataSource, Repository } from 'typeorm';
-import { isUniqueViolation } from '../common/validation.js';
+import type { User } from '../users/user.entity.js';
 import { inspectResumeFile } from './resume-file.js';
 import { Resume } from './resume.entity.js';
+
+export const DEFAULT_ATS_WEBHOOK_URL = 'http://localhost:5678/webhook-test/ats-check';
+
 
 @Injectable()
 export class ResumesService implements OnModuleInit {
   private readonly logger = new Logger(ResumesService.name);
   private readonly uploadDir: string;
+  private readonly atsWebhookUrl: string;
+  private readonly atsWebhookTimeoutMs: number;
 
   constructor(
     @InjectRepository(Resume) private readonly repo: Repository<Resume>,
@@ -28,6 +33,8 @@ export class ResumesService implements OnModuleInit {
     config: ConfigService,
   ) {
     this.uploadDir = resolve(config.get('UPLOAD_DIR', 'storage/curriculos'));
+    this.atsWebhookUrl = config.get('N8N_ATS_WEBHOOK_URL') || DEFAULT_ATS_WEBHOOK_URL;
+    this.atsWebhookTimeoutMs = Number(config.get('N8N_ATS_WEBHOOK_TIMEOUT_MS')) || 60_000;
   }
 
   async onModuleInit() {
@@ -47,37 +54,46 @@ export class ResumesService implements OnModuleInit {
     return resume;
   }
 
-  async upload(userId: string, file: Express.Multer.File | undefined): Promise<Resume> {
+  /**
+   * Valida o arquivo e o encaminha, como multipart/form-data (arquivo
+   * binário no campo "data"), para o webhook de ATS do n8n. Nada é gravado
+   * em disco nem no banco: quem processa e persiste é o fluxo do n8n. Retorna a resposta do webhook.
+   */
+  async upload(user: User, file: Express.Multer.File | undefined): Promise<unknown> {
     if (!file) throw new BadRequestException('Envie o arquivo no campo "file".');
     const inspected = inspectResumeFile(file.originalname, file.buffer);
     if (typeof inspected === 'string') throw new BadRequestException(inspected);
 
-    // um subdiretório por usuário: storage/curriculos/<userId>/<uuid>.pdf
-    await mkdir(join(this.uploadDir, userId), { recursive: true });
-    const storageKey = `${userId}/${randomUUID()}${inspected.extension}`;
-    await writeFile(join(this.uploadDir, storageKey), file.buffer);
+    // No n8n o arquivo aparece em `$binary.data` (File Name, Extension,
+    // Mime Type, Size); o userId chega em `body`.
+    const form = new FormData();
+    form.append('data', new Blob([new Uint8Array(file.buffer)], { type: inspected.mimeType }), inspected.originalName);
+    form.append('userId', user.id);
 
-    const data = {
-      userId,
-      storageKey,
-      originalName: inspected.originalName,
-      mimeType: inspected.mimeType,
-      sizeBytes: file.buffer.length,
-    };
-
+    let response: Response;
     try {
-      // o primeiro currículo do usuário vira o principal
-      const hasPrimary = await this.repo.existsBy({ userId, isPrimary: true });
-      try {
-        return await this.repo.save(this.repo.create({ ...data, isPrimary: !hasPrimary }));
-      } catch (error) {
-        // dois uploads simultâneos tentaram ser o principal: este entra como secundário
-        if (!isUniqueViolation(error, 'UQ_resumes_one_primary_per_user')) throw error;
-        return await this.repo.save(this.repo.create({ ...data, isPrimary: false }));
-      }
+      response = await fetch(this.atsWebhookUrl, {
+        method: 'POST',
+        // o Content-Type (com o boundary do multipart) é definido pelo fetch
+        headers: { Accept: 'application/json' },
+        body: form,
+        signal: AbortSignal.timeout(this.atsWebhookTimeoutMs),
+      });
     } catch (error) {
-      await this.deleteFiles([storageKey]);
-      throw error;
+      this.logger.error(`Falha ao contatar o webhook de ATS (${this.atsWebhookUrl}): ${String(error)}`);
+      throw new BadGatewayException('Não foi possível enviar o currículo para análise. Tente novamente.');
+    }
+
+    const body = await response.text();
+    if (!response.ok) {
+      this.logger.error(`Webhook de ATS respondeu ${response.status}: ${body.slice(0, 500)}`);
+      throw new BadGatewayException('O serviço de análise de currículos retornou um erro.');
+    }
+    if (!body) return { received: true };
+    try {
+      return JSON.parse(body) as unknown;
+    } catch {
+      return { message: body };
     }
   }
 

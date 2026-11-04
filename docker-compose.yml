@@ -35,6 +35,10 @@ services:
       JWT_SECRET: dev-only-secret-change-me
       JWT_EXPIRES_IN: 1d
       UPLOAD_DIR: storage/curriculos
+      # n8n rodando na máquina host (fora deste compose)
+      N8N_ATS_WEBHOOK_URL: http://host.docker.internal:5678/webhook-test/ats-check
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app
       - /app/node_modules

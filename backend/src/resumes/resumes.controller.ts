@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  ApiBadGatewayResponse,
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
@@ -56,14 +57,15 @@ export class ResumesController {
       properties: { file: { type: 'string', format: 'binary', description: 'PDF, DOC ou DOCX, até 5 MB.' } },
     },
   })
-  @ApiCreatedResponse({ type: ResumeResponseDto })
+  @ApiCreatedResponse({
+    description:
+      'Arquivo validado e enviado como multipart/form-data (binário no campo "data") ao webhook de ATS do n8n. Retorna a resposta do n8n.',
+  })
   @ApiBadRequestResponse({ description: 'Arquivo ausente, vazio ou de tipo inválido.' })
   @ApiPayloadTooLargeResponse({ description: 'Arquivo maior que 5 MB.' })
-  async upload(
-    @CurrentUser() user: User,
-    @UploadedFile() file: Express.Multer.File | undefined,
-  ): Promise<ResumeResponseDto> {
-    return ResumeResponseDto.from(await this.resumes.upload(user.id, file));
+  @ApiBadGatewayResponse({ description: 'O webhook do n8n está indisponível ou retornou erro.' })
+  upload(@CurrentUser() user: User, @UploadedFile() file: Express.Multer.File | undefined): Promise<unknown> {
+    return this.resumes.upload(user, file);
   }
 
   @Get(':id')

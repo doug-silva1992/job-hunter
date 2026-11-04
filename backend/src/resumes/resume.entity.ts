@@ -43,6 +43,10 @@ export class Resume {
   @Column({ name: 'is_primary', type: 'boolean', default: false })
   isPrimary: boolean;
 
+  /** Resultado da análise de ATS (JSON em texto), gravado pelo fluxo do n8n. */
+  @Column({ name: 'ats', type: 'text', nullable: true })
+  ats: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

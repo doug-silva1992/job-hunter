@@ -1,11 +1,22 @@
 import { api, uploadWithProgress } from './client'
 
+/** Avaliação de ATS gravada pelo n8n na coluna `resumes.ats`. Todos os campos são opcionais. */
+export type AtsResult = {
+  atsScore?: number
+  classificacao?: string
+  pontosFortes?: string[]
+  pontosFracos?: string[]
+  sugestoes?: string[]
+  tecnologiasIdentificadas?: string[]
+}
+
 export type Resume = {
   id: string
   originalName: string
   mimeType: string
   sizeBytes: number
   isPrimary: boolean
+  ats: AtsResult | null
   createdAt: string
 }
 
