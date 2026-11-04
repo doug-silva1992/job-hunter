@@ -162,6 +162,7 @@ describe('Job Hunter API (e2e)', () => {
       match: 94,
       tags: ['React', 'TypeScript', 'React'],
       postedAt: '2026-11-03T12:00:00.000Z',
+      link: 'https://acme.gupy.io/job/123',
     };
 
     it('CRUD completo, ordenação, busca, filtro e estatísticas', async () => {
@@ -185,7 +186,7 @@ describe('Job Hunter API (e2e)', () => {
       expect(search.body[0].company).toBe('Kappa Bank');
 
       // "Aplicar" = mover para a coluna Candidatado
-      const moved = await http().patch(`/api/jobs/${created.body.id}`).set(h).send({ stage: 'applied' }).expect(200);
+      const moved = await http().patch(`/api/jobs/${created.body.id}/stage`).set(h).send({ stage: 'applied' }).expect(200);
       expect(moved.body.stage).toBe('applied');
 
       const applied = await http().get('/api/jobs').query({ stage: 'applied' }).set(h).expect(200);
@@ -209,7 +210,11 @@ describe('Job Hunter API (e2e)', () => {
       const { accessToken } = await register();
       await http().post('/api/jobs').set(auth(accessToken)).send({ ...job, match: 150 }).expect(400);
       await http().post('/api/jobs').set(auth(accessToken)).send({ ...job, workMode: 'Remoto' }).expect(400);
+      await http().post('/api/jobs').set(auth(accessToken)).send({ ...job, link: 'javascript:alert(1)' }).expect(400);
       await http().patch(`/api/jobs/${randomUUID()}`).set(auth(accessToken)).send({ stage: 'hired' }).expect(400);
+      await http().patch(`/api/jobs/${randomUUID()}/stage`).set(auth(accessToken)).send({ stage: 'hired' }).expect(400);
+      await http().patch(`/api/jobs/${randomUUID()}/stage`).set(auth(accessToken)).send({}).expect(400);
+      await http().patch(`/api/jobs/${randomUUID()}/stage`).set(auth(accessToken)).send({ stage: 'offer' }).expect(404);
       await http().get('/api/jobs/nao-e-uuid').set(auth(accessToken)).expect(400);
     });
 
@@ -220,6 +225,7 @@ describe('Job Hunter API (e2e)', () => {
 
       await http().get(`/api/jobs/${created.body.id}`).set(auth(bob.accessToken)).expect(404);
       await http().patch(`/api/jobs/${created.body.id}`).set(auth(bob.accessToken)).send({ stage: 'offer' }).expect(404);
+      await http().patch(`/api/jobs/${created.body.id}/stage`).set(auth(bob.accessToken)).send({ stage: 'offer' }).expect(404);
       await http().delete(`/api/jobs/${created.body.id}`).set(auth(bob.accessToken)).expect(404);
       const bobList = await http().get('/api/jobs').set(auth(bob.accessToken)).expect(200);
       expect(bobList.body).toEqual([]);

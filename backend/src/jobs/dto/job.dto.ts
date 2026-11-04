@@ -6,6 +6,7 @@ import {
   IsDate,
   IsEnum,
   IsInt,
+  IsUrl,
   IsOptional,
   IsString,
   Length,
@@ -62,6 +63,13 @@ export class CreateJobDto {
   @IsEnum(JobStage)
   stage?: JobStage;
 
+  @ApiPropertyOptional({ example: 'https://empresa.gupy.io/job/123', nullable: true, description: 'Página da vaga.' })
+  @IsOptional()
+  @Transform(({ value }) => trim(value))
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { message: 'O link deve ser uma URL http(s).' })
+  @MaxLength(2048)
+  link?: string | null;
+
   @ApiPropertyOptional({ example: '2026-11-03T12:00:00.000Z', nullable: true, description: 'Data de publicação da vaga.' })
   @IsOptional()
   @Type(() => Date)
@@ -70,6 +78,13 @@ export class CreateJobDto {
 }
 
 export class UpdateJobDto extends PartialType(CreateJobDto) {}
+
+/** Corpo do PATCH /jobs/:id/stage (mover no Pipeline de candidaturas). */
+export class UpdateJobStageDto {
+  @ApiProperty({ enum: JobStage, enumName: 'JobStage', example: JobStage.Applied })
+  @IsEnum(JobStage)
+  stage: JobStage;
+}
 
 export class ListJobsQueryDto {
   @ApiPropertyOptional({ enum: JobStage, enumName: 'JobStage', description: 'Filtra por coluna do kanban.' })
@@ -102,6 +117,7 @@ export class JobResponseDto {
   @ApiProperty({ minimum: 0, maximum: 100 }) match: number;
   @ApiProperty({ type: [String] }) tags: string[];
   @ApiProperty({ enum: JobStage, enumName: 'JobStage' }) stage: JobStage;
+  @ApiProperty({ nullable: true, type: String, description: 'Página da vaga.' }) link: string | null;
   @ApiProperty({ nullable: true, type: Date }) postedAt: Date | null;
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;
@@ -116,6 +132,7 @@ export class JobResponseDto {
       match: job.match,
       tags: job.tags,
       stage: job.stage,
+      link: job.link,
       postedAt: job.postedAt,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,

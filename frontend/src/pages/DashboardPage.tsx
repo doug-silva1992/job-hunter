@@ -6,6 +6,7 @@ import { resumesApi } from '../api/resumes'
 import { settingsApi } from '../api/settings'
 import { displayName, useAuth } from '../auth/context'
 import type { LayoutContext } from '../components/AppLayout'
+import { JobsStatus } from '../components/JobsStatus'
 import { KanbanBoard } from '../components/KanbanBoard'
 import { MetricCards } from '../components/MetricCards'
 import { MatchDistributionChart } from '../components/charts/MatchDistributionChart'
@@ -14,7 +15,7 @@ import { TopSkillsChart } from '../components/charts/TopSkillsChart'
 const DEFAULT_MIN_MATCH = 70
 
 export function DashboardPage() {
-  const { jobs, moveJob } = useOutletContext<LayoutContext>()
+  const { jobs, loading, error, reloadJobs, moveJob } = useOutletContext<LayoutContext>()
   const { user } = useAuth()
   const [minMatch, setMinMatch] = useState(DEFAULT_MIN_MATCH)
   const [resumeSkills, setResumeSkills] = useState<string[] | null>(null)
@@ -46,6 +47,8 @@ export function DashboardPage() {
         </Typography>
         <Typography color="text.secondary">Aqui está um resumo da sua busca por vagas hoje.</Typography>
       </Box>
+
+      <JobsStatus loading={loading} error={error} onRetry={reloadJobs} />
 
       <MetricCards jobs={jobs} />
 

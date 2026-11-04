@@ -5,7 +5,7 @@ import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useMemo } from 'react'
-import type { Job } from '../../data/mock'
+import type { Job } from '../../api/jobs'
 import { ChartCard } from './ChartCard'
 
 type Props = {

@@ -30,6 +30,7 @@ import {
   JobStatsDto,
   ListJobsQueryDto,
   UpdateJobDto,
+  UpdateJobStageDto,
 } from './dto/job.dto.js';
 import { JobsService } from './jobs.service.js';
 
@@ -69,11 +70,24 @@ export class JobsController {
     return JobResponseDto.from(await this.jobs.create(user.id, dto));
   }
 
-  @Patch(':id')
+  @Patch(':id/stage')
   @ApiOperation({
-    summary: 'Atualiza a vaga',
-    description: 'Para mover no kanban ou "Aplicar", envie apenas `{ "stage": "applied" }`.',
+    summary: 'Atualiza o status da vaga no Pipeline de candidaturas',
+    description: 'Usado ao arrastar no kanban e no botão "Aplicar" (`{ "stage": "applied" }`).',
   })
+  @ApiOkResponse({ type: JobResponseDto })
+  @ApiBadRequestResponse({ description: 'Etapa inválida.' })
+  @ApiNotFoundResponse()
+  async updateStage(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateJobStageDto,
+  ): Promise<JobResponseDto> {
+    return JobResponseDto.from(await this.jobs.updateStage(user.id, id, dto.stage));
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Atualiza os dados da vaga' })
   @ApiOkResponse({ type: JobResponseDto })
   @ApiNotFoundResponse()
   async update(

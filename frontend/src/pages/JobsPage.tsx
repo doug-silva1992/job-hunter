@@ -1,33 +1,95 @@
-import SearchRounded from '@mui/icons-material/SearchRounded'
 import Box from '@mui/material/Box'
-import InputAdornment from '@mui/material/InputAdornment'
+import MenuItem from '@mui/material/MenuItem'
+import Pagination from '@mui/material/Pagination'
+import Select from '@mui/material/Select'
 import Snackbar from '@mui/material/Snackbar'
-import TextField from '@mui/material/TextField'
+import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router'
+import { matchesSearch, paginate } from '../api/jobs'
 import type { LayoutContext } from '../components/AppLayout'
 import { JobList } from '../components/JobList'
+import { JobsStatus } from '../components/JobsStatus'
+import { SearchField } from '../components/SearchField'
+import { paginationLabel } from '../components/paginationLabels'
+
+const PAGE_SIZES = [10, 20, 50]
 
 export function JobsPage() {
-  const { jobs, moveJob } = useOutletContext<LayoutContext>()
+  const { jobs, loading, error, reloadJobs, moveJob } = useOutletContext<LayoutContext>()
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0])
   const [toast, setToast] = useState<string | null>(null)
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
 
-  // filtra pela busca e ordena por aderência
-  const results = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const filtered = q
-      ? jobs.filter((j) => [j.company, j.role, j.location, j.workMode, ...j.tags].some((v) => v.toLowerCase().includes(q)))
-      : jobs
-    return [...filtered].sort((a, b) => b.match - a.match)
-  }, [jobs, search])
+  // a API já devolve ordenado por aderência; a busca filtra a lista carregada
+  const results = useMemo(
+    () => jobs.filter((j) => matchesSearch(j, search)).sort((a, b) => b.match - a.match),
+    [jobs, search],
+  )
+  const current = paginate(results, page, pageSize)
 
-  const applyJob = (id: number) => {
-    moveJob(id, 'applied')
+  const applyJob = async (id: string) => {
     const job = jobs.find((j) => j.id === id)
-    if (job) setToast(`Candidatura enviada para ${job.company}`)
+    setPending((prev) => new Set(prev).add(id))
+    try {
+      await moveJob(id, 'applied')
+      if (job) setToast(`Candidatura enviada para ${job.company}`)
+    } catch {
+      // o layout já mostrou o erro e desfez a mudança
+    } finally {
+      setPending((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
   }
+
+  const footer = results.length > 0 && (
+    <Stack
+      direction={{ xs: 'column', sm: 'row' }}
+      sx={{ px: 2.5, py: 1.5, alignItems: 'center', justifyContent: 'space-between', gap: 1.5 }}
+    >
+      <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, color: 'text.secondary' }}>
+        <Typography variant="body2" aria-live="polite">
+          {current.from}–{current.to} de {results.length}
+        </Typography>
+        <Select
+          size="small"
+          value={pageSize}
+          onChange={(e) => {
+            setPageSize(Number(e.target.value))
+            setPage(1)
+          }}
+          inputProps={{ 'aria-label': 'Vagas por página' }}
+          sx={{ fontSize: 14, '& .MuiSelect-select': { py: 0.5 } }}
+        >
+          {PAGE_SIZES.map((n) => (
+            <MenuItem key={n} value={n}>
+              {n} por página
+            </MenuItem>
+          ))}
+        </Select>
+      </Stack>
+      {current.pageCount > 1 && (
+        <Pagination
+          count={current.pageCount}
+          page={current.page}
+          onChange={(_, p) => {
+            setPage(p)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+          color="primary"
+          shape="rounded"
+          siblingCount={1}
+          getItemAriaLabel={paginationLabel}
+        />
+      )}
+    </Stack>
+  )
 
   return (
     <>
@@ -40,25 +102,28 @@ export function JobsPage() {
         </Typography>
       </Box>
 
-      <TextField
-        size="small"
-        placeholder="Buscar vagas, empresas ou tecnologias…"
+      <SearchField
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        sx={{ maxWidth: 520, '& .MuiOutlinedInput-root': { bgcolor: 'background.paper', borderRadius: 999 } }}
-        slotProps={{
-          htmlInput: { 'aria-label': 'Buscar vagas', type: 'search' },
-          input: {
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchRounded fontSize="small" />
-              </InputAdornment>
-            ),
-          },
+        onChange={(v) => {
+          setSearch(v)
+          setPage(1)
         }}
+        placeholder="Buscar vagas, empresas ou tecnologias…"
+        label="Buscar vagas"
       />
 
-      <JobList jobs={results} onApply={applyJob} />
+      <JobsStatus loading={loading} error={error} onRetry={reloadJobs} />
+
+      {!loading && !error && (
+        <JobList
+          jobs={current.items}
+          total={results.length}
+          onApply={applyJob}
+          pending={pending}
+          emptyText={jobs.length === 0 ? 'Nenhuma vaga encontrada ainda.' : undefined}
+          footer={footer}
+        />
+      )}
 
       <Snackbar
         open={toast !== null}

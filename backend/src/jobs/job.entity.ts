@@ -63,6 +63,10 @@ export class Job {
   @Column({ type: 'enum', enum: JobStage, enumName: 'job_stage', default: JobStage.Found })
   stage: JobStage;
 
+  /** Página da vaga no site de origem (Gupy, Remotive...). */
+  @Column({ type: 'text', nullable: true })
+  link: string | null;
+
   @Column({ name: 'posted_at', type: 'timestamptz', nullable: true })
   postedAt: Date | null;
 

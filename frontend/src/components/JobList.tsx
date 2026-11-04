@@ -1,5 +1,7 @@
 import CheckRounded from '@mui/icons-material/CheckRounded'
 import FmdGoodOutlined from '@mui/icons-material/FmdGoodOutlined'
+import MicRounded from '@mui/icons-material/MicRounded'
+import OpenInNewRounded from '@mui/icons-material/OpenInNewRounded'
 import SearchOffRounded from '@mui/icons-material/SearchOffRounded'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -8,17 +10,35 @@ import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { Fragment } from 'react'
-import type { Job } from '../data/mock'
+import { Fragment, useState, type ReactNode } from 'react'
+import { postedLabel, safeJobUrl, type Job } from '../api/jobs'
+import { WORK_MODE_LABELS } from '../api/settings'
+import { InterviewDialog } from '../interview/InterviewDialog'
 import { CompanyAvatar } from './CompanyAvatar'
 import { MatchBadge } from './MatchBadge'
 
 type Props = {
   jobs: Job[]
-  onApply: (id: number) => void
+  onApply: (id: string) => void
+  /** Vagas com a candidatura sendo gravada na API. */
+  pending?: ReadonlySet<string>
+  emptyText?: string
+  /** Total de vagas no cabeçalho (padrão: as da página). */
+  total?: number
+  /** Paginação, exibida no rodapé do card. */
+  footer?: ReactNode
 }
 
-export function JobList({ jobs, onApply }: Props) {
+export function JobList({
+  jobs,
+  onApply,
+  pending,
+  emptyText = 'Nenhuma vaga encontrada para essa busca.',
+  total = jobs.length,
+  footer,
+}: Props) {
+  const [interviewJob, setInterviewJob] = useState<Job | null>(null)
+
   return (
     <Card sx={{ height: '100%' }}>
       <Box sx={{ px: 2.5, py: 2, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
@@ -26,7 +46,7 @@ export function JobList({ jobs, onApply }: Props) {
           Vagas encontradas
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          {jobs.length} {jobs.length === 1 ? 'vaga' : 'vagas'}
+          {total} {total === 1 ? 'vaga' : 'vagas'}
         </Typography>
       </Box>
       <Divider />
@@ -34,12 +54,14 @@ export function JobList({ jobs, onApply }: Props) {
       {jobs.length === 0 ? (
         <Stack sx={{ alignItems: 'center', py: 6, color: 'text.secondary', gap: 1 }}>
           <SearchOffRounded />
-          <Typography variant="body2">Nenhuma vaga encontrada para essa busca.</Typography>
+          <Typography variant="body2">{emptyText}</Typography>
         </Stack>
       ) : (
         <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
           {jobs.map((job, i) => {
             const applied = job.stage !== 'found'
+            const saving = pending?.has(job.id) ?? false
+            const url = safeJobUrl(job.link)
             return (
               <Fragment key={job.id}>
                 {i > 0 && <Divider component="li" aria-hidden />}
@@ -63,13 +85,13 @@ export function JobList({ jobs, onApply }: Props) {
                       {job.role}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" noWrap>
-                      {job.company} · {job.postedAt}
+                      {job.company} · {postedLabel(job)}
                     </Typography>
                     <Stack direction="row" sx={{ mt: 1, gap: 0.75, flexWrap: 'wrap', alignItems: 'center' }}>
                       <Chip
                         size="small"
                         icon={<FmdGoodOutlined />}
-                        label={`${job.workMode} · ${job.location}`}
+                        label={`${WORK_MODE_LABELS[job.workMode]} · ${job.location}`}
                         variant="outlined"
                       />
                       {job.tags.map((t) => (
@@ -80,18 +102,39 @@ export function JobList({ jobs, onApply }: Props) {
 
                   <Stack
                     direction="row"
-                    sx={{ alignItems: 'center', gap: 2, ml: { xs: 'auto', sm: 0 } }}
+                    sx={{ alignItems: 'center', gap: 1.5, ml: { xs: 'auto', sm: 0 }, flexWrap: 'wrap', justifyContent: 'flex-end' }}
                   >
                     <MatchBadge value={job.match} />
                     <Button
+                      variant="outlined"
+                      startIcon={<MicRounded />}
+                      onClick={() => setInterviewJob(job)}
+                      aria-label={`Simular entrevista para ${job.role} na ${job.company}`}
+                    >
+                      Entrevista
+                    </Button>
+                    {url && (
+                      <Button
+                        component="a"
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        variant="outlined"
+                        endIcon={<OpenInNewRounded />}
+                        aria-label={`Ver vaga ${job.role} na ${job.company} (abre em nova aba)`}
+                      >
+                        Ver vaga
+                      </Button>
+                    )}
+                    <Button
                       variant={applied ? 'outlined' : 'contained'}
                       color={applied ? 'success' : 'primary'}
-                      disabled={applied}
+                      disabled={applied || saving}
                       startIcon={applied ? <CheckRounded /> : undefined}
                       onClick={() => onApply(job.id)}
                       sx={{ minWidth: 112 }}
                     >
-                      {applied ? 'Aplicado' : 'Aplicar'}
+                      {applied ? 'Aplicado' : saving ? 'Aplicando…' : 'Aplicar'}
                     </Button>
                   </Stack>
                 </Box>
@@ -101,6 +144,14 @@ export function JobList({ jobs, onApply }: Props) {
         </Box>
       )}
 
+      {footer && (
+        <>
+          <Divider />
+          {footer}
+        </>
+      )}
+
+      {interviewJob && <InterviewDialog job={interviewJob} onClose={() => setInterviewJob(null)} />}
     </Card>
   )
 }

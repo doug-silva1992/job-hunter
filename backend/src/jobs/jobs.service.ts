@@ -70,6 +70,7 @@ export class JobsService {
         userId,
         tags: dto.tags ?? [],
         stage: dto.stage ?? JobStage.Found,
+        link: dto.link ?? null,
         postedAt: dto.postedAt ?? null,
       }),
     );
@@ -79,6 +80,13 @@ export class JobsService {
     const job = await this.findOne(userId, id);
     Object.assign(job, dto);
     return this.repo.save(job);
+  }
+
+  /** Só altera a etapa do pipeline (status da candidatura). */
+  async updateStage(userId: string, id: string, stage: JobStage): Promise<Job> {
+    const result = await this.repo.update({ id, userId }, { stage });
+    if (!result.affected) throw new NotFoundException('Vaga não encontrada.');
+    return this.repo.findOneByOrFail({ id, userId });
   }
 
   async remove(userId: string, id: string): Promise<void> {

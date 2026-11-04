@@ -4,7 +4,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useMemo } from 'react'
 import { Link as RouterLink } from 'react-router'
-import type { Job } from '../../data/mock'
+import type { Job } from '../../api/jobs'
 import { ChartCard, MUTED_BAR } from './ChartCard'
 
 type Props = { jobs: Job[]; minMatch: number }
