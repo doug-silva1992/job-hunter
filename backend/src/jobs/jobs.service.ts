@@ -17,6 +17,7 @@ export class JobsService {
       .addOrderBy('job.createdAt', 'DESC');
 
     if (query.stage) qb.andWhere('job.stage = :stage', { stage: query.stage });
+    if (query.minMatch !== undefined) qb.andWhere('job.match >= :minMatch', { minMatch: query.minMatch });
     if (query.search) {
       const term = `%${query.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
       qb.andWhere(

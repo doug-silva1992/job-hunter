@@ -80,6 +80,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         apply({ token: res.accessToken, user: res.user })
       },
       logout: () => apply(null),
+      updateUser: (user: User) => {
+        if (session) apply({ token: session.token, user })
+      },
     }),
     [session, apply],
   )

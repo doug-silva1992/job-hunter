@@ -23,6 +23,7 @@ Job Hunter é uma plataforma que utiliza IA para encontrar, analisar e classific
 | Criar conta | `POST /api/auth/register`                                                |
 | Entrar      | `POST /api/auth/login`; a sessão (JWT) é revalidada em `GET /api/users/me` ao abrir o app e expira para o login se o token for inválido |
 | Currículos  | listar, enviar (com progresso), definir principal, baixar e remover via `/api/resumes` |
+| Configurações | preferências de busca (compatibilidade mínima, palavras-chave, senioridade, modalidade, local, salário, frequência) e notificações via `/api/settings`; perfil, senha e exclusão da conta via `/api/users/me` |
 | Dashboard   | ainda usa dados simulados (vagas, métricas e kanban)                     |
 
 O cliente HTTP fica em [frontend/src/api/](frontend/src/api/).
@@ -40,6 +41,7 @@ O schema é criado **somente** por migrations (`synchronize` está desligado). E
 | `1793750400000-CreateUsers`     | `users`   | nome de usuário, e-mail e hash da senha; ambos únicos (nome sem diferenciar maiúsculas) |
 | `1793750400001-CreateResumes`   | `resumes` | metadados do arquivo enviado; no máximo **um** currículo principal por usuário |
 | `1793750400002-CreateJobs`      | `jobs`    | empresa, cargo, local, modalidade, aderência (0–100), tags e etapa do kanban |
+| `1793750400004-CreateUserSettings` | `user_settings` | preferências de busca e notificação (uma linha por usuário, criada no primeiro salvamento) |
 
 Currículos e vagas pertencem a um usuário e são apagados junto com ele (`ON DELETE CASCADE`).
 
@@ -75,9 +77,11 @@ Documentação interativa em **`/api/docs`** (Swagger). Faça login, clique em *
 | `GET /api/resumes/:id/download`      | Baixa o arquivo                                             |
 | `PATCH /api/resumes/:id/primary`     | Define como principal                                       |
 | `DELETE /api/resumes/:id`            | Remove (se era o principal, o mais recente assume)          |
-| `GET /api/jobs?stage=&search=`       | Lista as vagas ordenadas por aderência, com filtro e busca  |
+| `GET /api/jobs?stage=&search=&minMatch=` | Lista as vagas ordenadas por aderência, com filtro e busca  |
 | `GET /api/jobs/stats`                | Números dos cards do Dashboard                              |
 | `POST /api/jobs`                     | Cria uma vaga                                               |
+| `GET /api/settings`                  | Preferências de busca e notificação (padrões se nunca salvas) |
+| `PUT /api/settings`                  | Salva todas as preferências                                 |
 | `GET /api/jobs/:id`                  | Dados de uma vaga                                           |
 | `PATCH /api/jobs/:id`                | Atualiza; para mover no kanban/“Aplicar” envie `{ "stage": "applied" }` |
 | `DELETE /api/jobs/:id`               | Remove a vaga                                               |

@@ -8,6 +8,8 @@ export type AuthContextValue = {
   login: (email: string, password: string) => Promise<void>
   register: (username: string, email: string, password: string) => Promise<void>
   logout: () => void
+  /** Atualiza os dados do usuário na sessão (ex.: após editar o perfil). */
+  updateUser: (user: User) => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

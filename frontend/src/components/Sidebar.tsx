@@ -1,4 +1,3 @@
-import AssignmentTurnedInOutlined from '@mui/icons-material/AssignmentTurnedInOutlined'
 import DashboardOutlined from '@mui/icons-material/DashboardOutlined'
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined'
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined'
@@ -20,7 +19,6 @@ const menu: { label: string; path: string; icon: ReactNode }[] = [
   { label: 'Dashboard', path: '/', icon: <DashboardOutlined /> },
   { label: 'Vagas', path: '/vagas', icon: <WorkOutlineOutlined /> },
   { label: 'Currículos', path: '/curriculos', icon: <DescriptionOutlined /> },
-  { label: 'Candidaturas', path: '/candidaturas', icon: <AssignmentTurnedInOutlined /> },
   { label: 'Configurações', path: '/configuracoes', icon: <SettingsOutlined /> },
 ]
 

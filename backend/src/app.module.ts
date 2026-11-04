@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { dataSourceOptions } from './database/typeorm.config.js';
 import { JobsModule } from './jobs/jobs.module.js';
 import { ResumesModule } from './resumes/resumes.module.js';
+import { SettingsModule } from './settings/settings.module.js';
 import { UsersModule } from './users/users.module.js';
 
 @Module({
@@ -20,6 +21,7 @@ import { UsersModule } from './users/users.module.js';
     UsersModule,
     ResumesModule,
     JobsModule,
+    SettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -77,6 +77,14 @@ export class ListJobsQueryDto {
   @IsEnum(JobStage)
   stage?: JobStage;
 
+  @ApiPropertyOptional({ example: 70, minimum: 0, maximum: 100, description: 'Só vagas com aderência maior ou igual a este valor (%).' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  minMatch?: number;
+
   @ApiPropertyOptional({ example: 'react', description: 'Busca em empresa, cargo, local e tags.' })
   @IsOptional()
   @Transform(({ value }) => trim(value))

@@ -2,9 +2,10 @@ import { Navigate, Route, Routes } from 'react-router'
 import { GuestOnly, RequireAuth } from './auth/RequireAuth'
 import { AppLayout } from './components/AppLayout'
 import { AuthPage } from './pages/AuthPage'
-import { ComingSoonPage } from './pages/ComingSoonPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { JobsPage } from './pages/JobsPage'
 import { ResumesPage } from './pages/ResumesPage'
+import { SettingsPage } from './pages/SettingsPage'
 
 function App() {
   return (
@@ -15,9 +16,8 @@ function App() {
       <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
         <Route index element={<DashboardPage />} />
         <Route path="curriculos" element={<ResumesPage />} />
-        <Route path="vagas" element={<ComingSoonPage title="Vagas" />} />
-        <Route path="candidaturas" element={<ComingSoonPage title="Candidaturas" />} />
-        <Route path="configuracoes" element={<ComingSoonPage title="Configurações" />} />
+        <Route path="vagas" element={<JobsPage />} />
+        <Route path="configuracoes" element={<SettingsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

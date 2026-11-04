@@ -326,6 +326,57 @@ describe('Job Hunter API (e2e)', () => {
     });
   });
 
+  describe('settings', () => {
+    const valid = {
+      minMatch: 80,
+      keywords: [' React ', 'react', 'Node.js'],
+      excludedKeywords: ['PHP'],
+      seniority: ['mid', 'senior'],
+      workModes: ['remote'],
+      locations: ['São Paulo, SP'],
+      minSalary: 9000,
+      maxJobAgeDays: 7,
+      searchFrequency: 'twice_daily',
+      notifyNewJobs: false,
+      weeklySummary: true,
+    };
+
+    it('retorna os padrões, salva e devolve as preferências', async () => {
+      const { accessToken } = await register();
+      const h = auth(accessToken);
+
+      const defaults = await http().get('/api/settings').set(h).expect(200);
+      expect(defaults.body).toMatchObject({ minMatch: 70, workModes: ['remote', 'hybrid', 'onsite'], updatedAt: null });
+
+      const saved = await http().put('/api/settings').set(h).send(valid).expect(200);
+      expect(saved.body).toMatchObject({ ...valid, keywords: ['React', 'Node.js'] });
+      expect(saved.body.updatedAt).not.toBeNull();
+
+      await http().put('/api/settings').set(h).send({ ...valid, minMatch: 55 }).expect(200);
+      const again = await http().get('/api/settings').set(h).expect(200);
+      expect(again.body.minMatch).toBe(55);
+    });
+
+    it('valida as preferências', async () => {
+      const h = auth((await register()).accessToken);
+      await http().put('/api/settings').set(h).send({ ...valid, minMatch: 101 }).expect(400);
+      await http().put('/api/settings').set(h).send({ ...valid, workModes: [] }).expect(400);
+      await http().put('/api/settings').set(h).send({ ...valid, maxJobAgeDays: 10 }).expect(400);
+      await http().put('/api/settings').set(h).send({ ...valid, seniority: ['ceo'] }).expect(400);
+      const { minMatch: _omit, ...partial } = valid;
+      await http().put('/api/settings').set(h).send(partial).expect(400);
+    });
+
+    it('filtra as vagas pela compatibilidade mínima', async () => {
+      const h = auth((await register()).accessToken);
+      const job = { company: 'Acme', role: 'Dev', location: 'Remoto', workMode: 'remote' };
+      await http().post('/api/jobs').set(h).send({ ...job, match: 60 }).expect(201);
+      await http().post('/api/jobs').set(h).send({ ...job, match: 90 }).expect(201);
+      const res = await http().get('/api/jobs?minMatch=75').set(h).expect(200);
+      expect(res.body.map((j: { match: number }) => j.match)).toEqual([90]);
+    });
+  });
+
   it('excluir a conta invalida o token e remove os dados e a pasta de currículos', async () => {
     const { accessToken, user } = await register();
     const h = auth(accessToken);

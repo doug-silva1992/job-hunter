@@ -1,7 +1,6 @@
 import LogoutRounded from '@mui/icons-material/LogoutRounded'
 import MenuRounded from '@mui/icons-material/MenuRounded'
 import NotificationsNoneOutlined from '@mui/icons-material/NotificationsNoneOutlined'
-import SearchRounded from '@mui/icons-material/SearchRounded'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Badge from '@mui/material/Badge'
@@ -9,25 +8,18 @@ import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import TextField from '@mui/material/TextField'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { displayName, useAuth } from '../auth/context'
 
-type Props = {
-  search: string
-  onSearchChange: (value: string) => void
-  showSearch: boolean
-  onMenuClick: () => void
-}
+type Props = { onMenuClick: () => void }
 
-export function Header({ search, onSearchChange, showSearch, onMenuClick }: Props) {
+export function Header({ onMenuClick }: Props) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
@@ -45,31 +37,6 @@ export function Header({ search, onSearchChange, showSearch, onMenuClick }: Prop
         <IconButton edge="start" aria-label="Abrir menu" onClick={onMenuClick} sx={{ display: { md: 'none' } }}>
           <MenuRounded />
         </IconButton>
-
-        {showSearch && (
-          <TextField
-            size="small"
-            placeholder="Buscar vagas, empresas ou tecnologias…"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            sx={{
-              flex: 1,
-              maxWidth: 520,
-              '& .MuiOutlinedInput-root': { bgcolor: 'background.default', borderRadius: 999 },
-              '& fieldset': { borderColor: 'transparent' },
-            }}
-            slotProps={{
-              htmlInput: { 'aria-label': 'Buscar vagas' },
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchRounded fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
-        )}
 
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
           <IconButton aria-label="Notificações">
