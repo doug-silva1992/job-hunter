@@ -1,4 +1,7 @@
+import TravelExploreRounded from '@mui/icons-material/TravelExploreRounded'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
 import Pagination from '@mui/material/Pagination'
 import Select from '@mui/material/Select'
@@ -6,9 +9,11 @@ import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useMemo, useState } from 'react'
-import { useOutletContext } from 'react-router'
+import { Link as RouterLink, useOutletContext } from 'react-router'
 import { matchesSearch, paginate } from '../api/jobs'
+import { keywordHits } from '../api/preferences'
 import type { LayoutContext } from '../components/AppLayout'
+import { GenerateJobsDialog } from '../components/GenerateJobsDialog'
 import { JobList } from '../components/JobList'
 import { JobsStatus } from '../components/JobsStatus'
 import { SearchField } from '../components/SearchField'
@@ -17,17 +22,27 @@ import { paginationLabel } from '../components/paginationLabels'
 const PAGE_SIZES = [10, 20, 50]
 
 export function JobsPage() {
-  const { jobs, loading, error, reloadJobs, moveJob } = useOutletContext<LayoutContext>()
+  const { jobs: filteredJobs, allJobs, hiddenCount, settings, loading, error, reloadJobs, moveJob } =
+    useOutletContext<LayoutContext>()
+  const [showAll, setShowAll] = useState(false)
+  const jobs = showAll ? allJobs : filteredJobs
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0])
   const [toast, setToast] = useState<string | null>(null)
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
+  const [generateOpen, setGenerateOpen] = useState(false)
+  const [generateKey, setGenerateKey] = useState(0)
 
-  // a API já devolve ordenado por aderência; a busca filtra a lista carregada
+  // ordena por aderência; no empate, vêm antes as que citam mais palavras-chave das preferências
   const results = useMemo(
-    () => jobs.filter((j) => matchesSearch(j, search)).sort((a, b) => b.match - a.match),
-    [jobs, search],
+    () =>
+      jobs
+        .filter((j) => matchesSearch(j, search))
+        .map((job) => ({ job, hits: keywordHits(job, settings) }))
+        .sort((a, b) => b.job.match - a.job.match || b.hits - a.hits)
+        .map((r) => r.job),
+    [jobs, search, settings],
   )
   const current = paginate(results, page, pageSize)
 
@@ -93,14 +108,30 @@ export function JobsPage() {
 
   return (
     <>
-      <Box>
-        <Typography variant="h5" component="h1">
-          Vagas
-        </Typography>
-        <Typography color="text.secondary">
-          Vagas encontradas para o seu perfil, ordenadas por compatibilidade.
-        </Typography>
-      </Box>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        sx={{ alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'space-between', gap: 2 }}
+      >
+        <Box>
+          <Typography variant="h5" component="h1">
+            Vagas
+          </Typography>
+          <Typography color="text.secondary">
+            Vagas encontradas para o seu perfil, ordenadas por compatibilidade.
+          </Typography>
+        </Box>
+        <Button
+          variant="contained"
+          startIcon={<TravelExploreRounded />}
+          onClick={() => {
+            setGenerateKey((k) => k + 1)
+            setGenerateOpen(true)
+          }}
+          sx={{ flexShrink: 0 }}
+        >
+          Gerar vagas
+        </Button>
+      </Stack>
 
       <SearchField
         value={search}
@@ -112,6 +143,33 @@ export function JobsPage() {
         label="Buscar vagas"
       />
 
+      {!loading && !error && (hiddenCount > 0 || showAll) && (
+        <Alert
+          severity="info"
+          action={
+            <Stack direction="row" sx={{ gap: 0.5 }}>
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => {
+                  setShowAll((v) => !v)
+                  setPage(1)
+                }}
+              >
+                {showAll ? 'Aplicar preferências' : 'Mostrar todas'}
+              </Button>
+              <Button color="inherit" size="small" component={RouterLink} to="/configuracoes">
+                Ajustar
+              </Button>
+            </Stack>
+          }
+        >
+          {showAll
+            ? 'Mostrando todas as vagas, sem o filtro das suas preferências.'
+            : `${hiddenCount} ${hiddenCount === 1 ? 'vaga oculta' : 'vagas ocultas'} pelas suas preferências (compatibilidade mínima de ${settings.minMatch}%, modalidade, local, senioridade, termos excluídos e publicação nos últimos ${settings.maxJobAgeDays} dias).`}
+        </Alert>
+      )}
+
       <JobsStatus loading={loading} error={error} onRetry={reloadJobs} />
 
       {!loading && !error && (
@@ -120,10 +178,26 @@ export function JobsPage() {
           total={results.length}
           onApply={applyJob}
           pending={pending}
-          emptyText={jobs.length === 0 ? 'Nenhuma vaga encontrada ainda.' : undefined}
+          emptyText={
+            allJobs.length === 0
+              ? 'Nenhuma vaga encontrada ainda.'
+              : jobs.length === 0
+                ? 'Nenhuma vaga atende às suas preferências.'
+                : undefined
+          }
           footer={footer}
         />
       )}
+
+      <GenerateJobsDialog
+        key={generateKey}
+        open={generateOpen}
+        onClose={() => setGenerateOpen(false)}
+        onSent={(resume) => {
+          setGenerateOpen(false)
+          setToast(`Busca de vagas iniciada com "${resume.originalName}"`)
+        }}
+      />
 
       <Snackbar
         open={toast !== null}

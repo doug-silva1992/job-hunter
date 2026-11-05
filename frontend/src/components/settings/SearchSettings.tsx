@@ -10,11 +10,9 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { alpha } from '@mui/material/styles'
 import {
-  FREQUENCY_LABELS,
   JOB_AGE_OPTIONS,
   SENIORITY_LABELS,
   WORK_MODE_LABELS,
-  type SearchFrequency,
   type Settings,
 } from '../../api/settings'
 import { matchColor } from '../matchColor'
@@ -231,7 +229,7 @@ export function SearchSettings({ value, onChange }: Props) {
         </SettingsField>
       </SettingsSection>
 
-      <SettingsSection title="Filtros e frequência" description="Como e quando a busca automática acontece.">
+      <SettingsSection title="Filtros" description="Quais vagas devem ser descartadas.">
         <SettingsField label="Excluir vagas com" hint="Termos ou empresas que você não quer ver." htmlFor="excluded">
           <TagInput
             id="excluded"
@@ -254,23 +252,6 @@ export function SearchSettings({ value, onChange }: Props) {
             {JOB_AGE_OPTIONS.map((d) => (
               <MenuItem key={d} value={d}>
                 {d === 1 ? '1 dia' : `${d} dias`}
-              </MenuItem>
-            ))}
-          </TextField>
-        </SettingsField>
-
-        <SettingsField label="Busca automática" hint="Com que frequência o Job Hunter procura novas vagas." htmlFor="frequency">
-          <TextField
-            id="frequency"
-            select
-            size="small"
-            value={value.searchFrequency}
-            onChange={(e) => onChange({ searchFrequency: e.target.value as SearchFrequency })}
-            sx={{ minWidth: 240 }}
-          >
-            {(Object.keys(FREQUENCY_LABELS) as SearchFrequency[]).map((f) => (
-              <MenuItem key={f} value={f}>
-                {FREQUENCY_LABELS[f]}
               </MenuItem>
             ))}
           </TextField>

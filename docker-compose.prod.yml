@@ -31,8 +31,12 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
       UPLOAD_DIR: /app/storage/curriculos
       N8N_ATS_WEBHOOK_URL: ${N8N_ATS_WEBHOOK_URL:?Defina N8N_ATS_WEBHOOK_URL no .env}
+      N8N_SEARCH_JOBS_WEBHOOK_URL: ${N8N_SEARCH_JOBS_WEBHOOK_URL:?Defina N8N_SEARCH_JOBS_WEBHOOK_URL no .env}
+      INTERVIEW_AUDIO_DIR: /app/storage/entrevistas
+      N8N_INTERVIEW_WEBHOOK_URL: ${N8N_INTERVIEW_WEBHOOK_URL:-}
     volumes:
       - curriculos:/app/storage/curriculos
+      - entrevistas:/app/storage/entrevistas
     expose:
       - "3000"
     depends_on:
@@ -53,3 +57,4 @@ services:
 volumes:
   db-data:
   curriculos:
+  entrevistas:

@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import type { SettingsResponse } from '../api/settings'
 
 /** Usuário retornado pela API (POST /auth/*, GET /users/me). */
 export type User = { id: string; username: string; email: string; createdAt: string }
@@ -10,6 +11,10 @@ export type AuthContextValue = {
   logout: () => void
   /** Atualiza os dados do usuário na sessão (ex.: após editar o perfil). */
   updateUser: (user: User) => void
+  /** Preferências da tabela user_settings, carregadas no login (null até chegarem). */
+  settings: SettingsResponse | null
+  /** Atualiza as preferências na sessão (ex.: após salvar em Configurações). */
+  updateSettings: (settings: SettingsResponse) => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

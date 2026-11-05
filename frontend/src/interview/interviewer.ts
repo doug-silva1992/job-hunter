@@ -1,6 +1,7 @@
 import type { Job } from '../api/jobs'
 
 export type InterviewRole = 'interviewer' | 'candidate'
+/** Na resposta do candidato, `text` é só um marcador: a resposta é o áudio gravado. */
 export type InterviewMessage = { role: InterviewRole; text: string }
 
 /** Próxima fala do entrevistador; `done` encerra a simulação. */
@@ -39,14 +40,8 @@ function questions(job: Job): string[] {
 }
 
 function closing(history: InterviewMessage[]): string {
-  const answers = history.filter((m) => m.role === 'candidate')
-  const words = answers.reduce((sum, m) => sum + m.text.split(/\s+/).filter(Boolean).length, 0)
-  const avg = answers.length ? Math.round(words / answers.length) : 0
-  const tip =
-    avg < 25
-      ? 'Suas respostas foram curtas. Tente o método STAR (Situação, Tarefa, Ação e Resultado) e dê exemplos concretos.'
-      : 'Bom nível de detalhe! Para refinar, inclua números e resultados mensuráveis sempre que puder.'
-  return `Obrigado pela conversa! Encerramos a simulação. Você respondeu ${answers.length} perguntas, com média de ${avg} palavras por resposta. ${tip}`
+  const answers = history.filter((m) => m.role === 'candidate').length
+  return `Obrigado pela conversa! Encerramos a simulação com ${answers} ${answers === 1 ? 'resposta gravada' : 'respostas gravadas'}. Agora vou enviar os seus áudios para análise.`
 }
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))

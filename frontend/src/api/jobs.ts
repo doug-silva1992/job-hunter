@@ -2,7 +2,7 @@ import { api } from './client'
 import { WORK_MODE_LABELS, type WorkMode } from './settings'
 
 /** Colunas do Pipeline de candidaturas (enum `job_stage` no banco). */
-export type Stage = 'found' | 'applied' | 'interview' | 'offer'
+export type Stage = 'found' | 'applied' | 'interview' | 'offer' | 'rejected'
 
 /** Vaga como devolvida por GET /api/jobs (datas em ISO). */
 export type Job = {
@@ -39,6 +39,9 @@ export const jobsApi = {
   /** Move a vaga para outra coluna do pipeline. */
   updateStage: (id: string, stage: Stage) =>
     api<Job>(`/jobs/${id}/stage`, { method: 'PATCH', json: { stage } }),
+
+  /** Pede ao n8n (via backend) para gerar vagas a partir do currículo escolhido. */
+  search: (resumeId: string) => api<unknown>('/jobs/search', { method: 'POST', json: { resumeId } }),
 }
 
 export const stages: { id: Stage; label: string; color: string }[] = [
@@ -46,6 +49,7 @@ export const stages: { id: Stage; label: string; color: string }[] = [
   { id: 'applied', label: 'Candidatado', color: '#0A66C2' },
   { id: 'interview', label: 'Entrevista', color: '#B26A00' },
   { id: 'offer', label: 'Oferta', color: '#057642' },
+  { id: 'rejected', label: 'Rejeitados', color: '#C9372C' },
 ]
 
 /** Só abre links http(s): o valor vem de fora (n8n) e não deve executar `javascript:`. */
@@ -93,7 +97,8 @@ export function matchesSearch(job: Job, search: string): boolean {
   )
 }
 
-const normalize = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+/** Minúsculas e sem acentos, para comparar textos. */
+export const normalize = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
 
 export type PageSlice<T> = { items: T[]; page: number; pageCount: number; from: number; to: number }
 

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, setAuthToken, setUnauthorizedHandler } from '../api/client'
+import { settingsApi, type SettingsResponse } from '../api/settings'
 import { AuthContext, normalizeEmail, type User } from './context'
 
 const STORAGE_KEY = 'job-hunter:session'
 
-type Session = { token: string; user: User }
-type AuthResponse = { accessToken: string; user: User }
+/** `settings` pode faltar em sessões salvas antes desta versão; é buscado na revalidação. */
+type Session = { token: string; user: User; settings?: SettingsResponse }
+type AuthResponse = { accessToken: string; user: User; settings: SettingsResponse }
 
 function readSession(): Session | null {
   try {
@@ -49,12 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null)
   }, [apply])
 
-  // revalida a sessão salva e atualiza os dados do usuário
+  // revalida a sessão salva e atualiza os dados do usuário e as preferências
   const savedToken = session?.token
   useEffect(() => {
     if (!savedToken) return
-    api<User>('/users/me')
-      .then((user) => apply({ token: savedToken, user }))
+    Promise.all([api<User>('/users/me'), settingsApi.get()])
+      .then(([user, settings]) => apply({ token: savedToken, user, settings }))
       .catch(() => {
         // 401 já é tratado pelo handler acima; falha de rede mantém a sessão
       })
@@ -70,18 +72,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: 'POST',
           json: { email: normalizeEmail(email), password },
         })
-        apply({ token: res.accessToken, user: res.user })
+        apply({ token: res.accessToken, user: res.user, settings: res.settings })
       },
       register: async (username: string, email: string, password: string) => {
         const res = await api<AuthResponse>('/auth/register', {
           method: 'POST',
           json: { username: username.trim(), email: normalizeEmail(email), password },
         })
-        apply({ token: res.accessToken, user: res.user })
+        apply({ token: res.accessToken, user: res.user, settings: res.settings })
       },
       logout: () => apply(null),
       updateUser: (user: User) => {
-        if (session) apply({ token: session.token, user })
+        if (session) apply({ ...session, user })
+      },
+      settings: session?.settings ?? null,
+      updateSettings: (settings: SettingsResponse) => {
+        if (session) apply({ ...session, settings })
       },
     }),
     [session, apply],

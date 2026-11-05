@@ -12,13 +12,14 @@ import { alpha } from '@mui/material/styles'
 import { useMemo, useState } from 'react'
 import { matchesSearch, paginate, safeJobUrl, stages, type Job, type Stage } from '../api/jobs'
 import { InterviewDialog } from '../interview/InterviewDialog'
+import { JobDetailsDialog } from './JobDetailsDialog'
 import { CompanyAvatar } from './CompanyAvatar'
 import { matchColor } from './matchColor'
 import { paginationLabel } from './paginationLabels'
 import { SearchField } from './SearchField'
 
 const PAGE_SIZE = 5
-const FIRST_PAGES: Record<Stage, number> = { found: 1, applied: 1, interview: 1, offer: 1 }
+const FIRST_PAGES: Record<Stage, number> = { found: 1, applied: 1, interview: 1, offer: 1, rejected: 1 }
 
 type Props = {
   jobs: Job[]
@@ -31,6 +32,9 @@ export function KanbanBoard({ jobs, onMove }: Props) {
   const [search, setSearch] = useState('')
   const [pages, setPages] = useState(FIRST_PAGES)
   const [interviewJob, setInterviewJob] = useState<Job | null>(null)
+  // guarda só o id: a vaga é lida da lista, então a modal reflete a mudança de etapa
+  const [detailsId, setDetailsId] = useState<string | null>(null)
+  const detailsJob = detailsId ? jobs.find((j) => j.id === detailsId) : undefined
   const filtered = useMemo(() => jobs.filter((j) => matchesSearch(j, search)), [jobs, search])
 
   return (
@@ -68,7 +72,7 @@ export function KanbanBoard({ jobs, onMove }: Props) {
         sx={{
           display: 'grid',
           gap: 2,
-          gridTemplateColumns: { xs: 'repeat(4, minmax(240px, 1fr))', lg: 'repeat(4, 1fr)' },
+          gridTemplateColumns: { xs: `repeat(${stages.length}, minmax(240px, 1fr))`, xl: `repeat(${stages.length}, 1fr)` },
           overflowX: 'auto',
           pb: 1,
         }}
@@ -122,16 +126,28 @@ export function KanbanBoard({ jobs, onMove }: Props) {
                     <Card
                       key={job.id}
                       draggable
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Ver detalhes da vaga ${job.role} na ${job.company}`}
+                      onClick={() => setDetailsId(job.id)}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setDetailsId(job.id)
+                        }
+                      }}
                       onDragStart={(e) => {
                         e.dataTransfer.setData('text/plain', job.id)
                         e.dataTransfer.effectAllowed = 'move'
                       }}
                       sx={{
                         p: 1.5,
-                        cursor: 'grab',
+                        cursor: 'pointer',
                         transition: 'box-shadow .15s, transform .15s',
                         '&:hover': { boxShadow: '0 4px 12px rgba(16,24,40,.08)', transform: 'translateY(-1px)' },
                         '&:active': { cursor: 'grabbing' },
+                        '&:focus-visible': { outline: (t) => `2px solid ${t.palette.primary.main}`, outlineOffset: 2 },
                       }}
                     >
                       <Stack direction="row" sx={{ gap: 1.25, alignItems: 'center' }}>
@@ -151,7 +167,10 @@ export function KanbanBoard({ jobs, onMove }: Props) {
                           <IconButton
                             size="small"
                             draggable={false}
-                            onClick={() => setInterviewJob(job)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setInterviewJob(job)
+                            }}
                             aria-label={`Simular entrevista para ${job.role} na ${job.company}`}
                             sx={{ ml: -0.5, mr: url ? -1 : -0.75 }}
                           >
@@ -167,6 +186,7 @@ export function KanbanBoard({ jobs, onMove }: Props) {
                               rel="noopener noreferrer"
                               size="small"
                               draggable={false}
+                              onClick={(e) => e.stopPropagation()}
                               aria-label={`Abrir vaga ${job.role} na ${job.company} em nova aba`}
                               sx={{ ml: -0.5, mr: -0.75 }}
                             >
@@ -201,6 +221,18 @@ export function KanbanBoard({ jobs, onMove }: Props) {
           )
         })}
       </Box>
+
+      {detailsJob && (
+        <JobDetailsDialog
+          job={detailsJob}
+          onClose={() => setDetailsId(null)}
+          onMove={onMove}
+          onInterview={(job) => {
+            setDetailsId(null)
+            setInterviewJob(job)
+          }}
+        />
+      )}
 
       {interviewJob && <InterviewDialog job={interviewJob} onClose={() => setInterviewJob(null)} />}
     </Box>

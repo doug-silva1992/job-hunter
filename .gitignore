@@ -5,3 +5,5 @@ coverage/
 *.log
 backend/storage/curriculos/*
 !backend/storage/curriculos/.gitkeep
+backend/storage/entrevistas/*
+!backend/storage/entrevistas/.gitkeep

@@ -2,7 +2,6 @@ import { api } from './client'
 
 export type WorkMode = 'remote' | 'hybrid' | 'onsite'
 export type Seniority = 'intern' | 'junior' | 'mid' | 'senior' | 'specialist'
-export type SearchFrequency = 'manual' | 'daily' | 'twice_daily' | 'weekly'
 
 /** Preferências de busca e notificação (GET/PUT /api/settings). */
 export type Settings = {
@@ -14,7 +13,6 @@ export type Settings = {
   locations: string[]
   minSalary: number | null
   maxJobAgeDays: number
-  searchFrequency: SearchFrequency
   notifyNewJobs: boolean
   weeklySummary: boolean
 }
@@ -41,11 +39,4 @@ export const WORK_MODE_LABELS: Record<WorkMode, string> = {
   remote: 'Remoto',
   hybrid: 'Híbrido',
   onsite: 'Presencial',
-}
-
-export const FREQUENCY_LABELS: Record<SearchFrequency, string> = {
-  manual: 'Somente quando eu pedir',
-  daily: 'Uma vez por dia',
-  twice_daily: 'Duas vezes por dia',
-  weekly: 'Uma vez por semana',
 }

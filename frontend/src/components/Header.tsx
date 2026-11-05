@@ -1,6 +1,7 @@
 import LogoutRounded from '@mui/icons-material/LogoutRounded'
 import MenuRounded from '@mui/icons-material/MenuRounded'
 import NotificationsNoneOutlined from '@mui/icons-material/NotificationsNoneOutlined'
+import NotificationsOffOutlined from '@mui/icons-material/NotificationsOffOutlined'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Badge from '@mui/material/Badge'
@@ -12,14 +13,21 @@ import ListItemIcon from '@mui/material/ListItemIcon'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Toolbar from '@mui/material/Toolbar'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { displayName, useAuth } from '../auth/context'
 
-type Props = { onMenuClick: () => void }
+type Props = {
+  onMenuClick: () => void
+  /** Preferência "Novas vagas compatíveis" (Configurações > Notificações). */
+  notificationsEnabled: boolean
+  /** Vagas compatíveis encontradas hoje. */
+  newJobs: number
+}
 
-export function Header({ onMenuClick }: Props) {
+export function Header({ onMenuClick, notificationsEnabled, newJobs }: Props) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
@@ -39,11 +47,27 @@ export function Header({ onMenuClick }: Props) {
         </IconButton>
 
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <IconButton aria-label="Notificações">
-            <Badge color="primary" variant="dot">
-              <NotificationsNoneOutlined />
-            </Badge>
-          </IconButton>
+          {notificationsEnabled ? (
+            <Tooltip title={newJobs ? `${newJobs} nova(s) vaga(s) compatível(is) hoje` : 'Nenhuma vaga nova hoje'}>
+              <IconButton
+                aria-label={newJobs ? `Notificações: ${newJobs} vaga(s) nova(s) hoje` : 'Notificações'}
+                onClick={() => navigate('/vagas')}
+              >
+                <Badge color="primary" badgeContent={newJobs} max={99}>
+                  <NotificationsNoneOutlined />
+                </Badge>
+              </IconButton>
+            </Tooltip>
+          ) : (
+            <Tooltip title="Notificações desativadas em Configurações">
+              <IconButton
+                aria-label="Notificações desativadas"
+                onClick={() => navigate('/configuracoes?aba=notificacoes')}
+              >
+                <NotificationsOffOutlined />
+              </IconButton>
+            </Tooltip>
+          )}
 
           <ButtonBase
             onClick={(e) => setAnchor(e.currentTarget)}

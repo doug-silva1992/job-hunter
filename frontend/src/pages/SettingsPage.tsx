@@ -27,9 +27,23 @@ type TabId = (typeof TABS)[number]['id']
 const messageOf = (err: unknown) =>
   err instanceof ApiError ? err.message : 'Não foi possível concluir a operação.'
 
-/** Só os campos editáveis, sem `updatedAt`. */
-function toSettings({ updatedAt: _updatedAt, ...rest }: SettingsResponse): Settings {
-  return rest
+/**
+ * Só os campos editáveis, um a um: campos extras (ex.: `searchFrequency` de sessões
+ * antigas guardadas no navegador) seriam recusados pela API ao salvar.
+ */
+function toSettings(s: SettingsResponse): Settings {
+  return {
+    minMatch: s.minMatch,
+    keywords: s.keywords,
+    excludedKeywords: s.excludedKeywords,
+    seniority: s.seniority,
+    workModes: s.workModes,
+    locations: s.locations,
+    minSalary: s.minSalary,
+    maxJobAgeDays: s.maxJobAgeDays,
+    notifyNewJobs: s.notifyNewJobs,
+    weeklySummary: s.weeklySummary,
+  }
 }
 
 const sameSettings = (a: Settings, b: Settings) => JSON.stringify(a) === JSON.stringify(b)
@@ -41,19 +55,22 @@ function formatSaved(iso: string | null) {
 }
 
 export function SettingsPage() {
-  const { user } = useAuth()
+  const { user, settings: sessionSettings, updateSettings } = useAuth()
   const [params, setParams] = useSearchParams()
   const tab: TabId = TABS.some((t) => t.id === params.get('aba')) ? (params.get('aba') as TabId) : 'busca'
 
-  const [saved, setSaved] = useState<SettingsResponse | null>(null)
-  const [draft, setDraft] = useState<Settings | null>(null)
+  // começa com o que veio no login; só busca na API se a sessão ainda não tiver as preferências
+  const [saved, setSaved] = useState<SettingsResponse | null>(sessionSettings)
+  const [draft, setDraft] = useState<Settings | null>(() => (sessionSettings ? toSettings(sessionSettings) : null))
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
+  const hasInitial = sessionSettings !== null
   useEffect(() => {
+    if (hasInitial && reloadKey === 0) return
     let active = true
     settingsApi
       .get()
@@ -62,11 +79,14 @@ export function SettingsPage() {
         setSaved(res)
         setDraft(toSettings(res))
         setLoadError(null)
+        updateSettings(res)
       })
       .catch((err: unknown) => active && setLoadError(messageOf(err)))
     return () => {
       active = false
     }
+    // só na montagem e no "Tentar novamente"
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey])
 
   const dirty = saved !== null && draft !== null && !sameSettings(toSettings(saved), draft)
@@ -90,7 +110,9 @@ export function SettingsPage() {
       const res = await settingsApi.save(draft)
       setSaved(res)
       setDraft(toSettings(res))
-      setToast('Configurações salvas.')
+      // atualiza a sessão: vagas, dashboard e notificações passam a usar as novas preferências
+      updateSettings(res)
+      setToast('Configurações salvas e aplicadas.')
     } catch (err) {
       setSaveError(messageOf(err))
     } finally {

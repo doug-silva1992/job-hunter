@@ -1,15 +1,25 @@
 import Box from '@mui/material/Box'
 import Snackbar from '@mui/material/Snackbar'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet } from 'react-router'
 import { ApiError } from '../api/client'
-import { jobsApi, type Job, type Stage } from '../api/jobs'
+import { foundToday, jobsApi, type Job, type Stage } from '../api/jobs'
+import { DEFAULT_SETTINGS, visibleJobs } from '../api/preferences'
+import type { Settings } from '../api/settings'
+import { useAuth } from '../auth/context'
 import { Header } from './Header'
 import { Sidebar } from './Sidebar'
 
 /** Vagas compartilhadas entre Dashboard (kanban) e Vagas (lista). */
 export type LayoutContext = {
+  /** Vagas filtradas pelas preferências (as do pipeline, de "Candidatado" em diante, sempre aparecem). */
   jobs: Job[]
+  /** Todas as vagas, sem o filtro das preferências. */
+  allJobs: Job[]
+  /** Vagas "encontradas" escondidas pelas preferências. */
+  hiddenCount: number
+  /** Preferências do usuário (padrões enquanto não carregam). */
+  settings: Settings
   loading: boolean
   error: string | null
   reloadJobs: () => void
@@ -20,6 +30,8 @@ export type LayoutContext = {
 const message = (e: unknown) => (e instanceof ApiError ? e.message : 'Não foi possível concluir a operação.')
 
 export function AppLayout() {
+  const { settings: savedSettings } = useAuth()
+  const settings = savedSettings ?? DEFAULT_SETTINGS
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,12 +74,19 @@ export function AppLayout() {
     }
   }, [])
 
+  const visible = useMemo(() => visibleJobs(jobs, settings), [jobs, settings])
+  const newToday = foundToday(visible.filter((j) => j.stage === 'found'))
+
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
       <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
 
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <Header onMenuClick={() => setMobileOpen(true)} />
+        <Header
+          onMenuClick={() => setMobileOpen(true)}
+          notificationsEnabled={settings.notifyNewJobs}
+          newJobs={newToday}
+        />
         <Box
           component="main"
           sx={{
@@ -81,7 +100,20 @@ export function AppLayout() {
             mx: 'auto',
           }}
         >
-          <Outlet context={{ jobs, loading, error, reloadJobs, moveJob } satisfies LayoutContext} />
+          <Outlet
+            context={
+              {
+                jobs: visible,
+                allJobs: jobs,
+                hiddenCount: jobs.length - visible.length,
+                settings,
+                loading,
+                error,
+                reloadJobs,
+                moveJob,
+              } satisfies LayoutContext
+            }
+          />
         </Box>
       </Box>
 
