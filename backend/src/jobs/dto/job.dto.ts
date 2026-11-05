@@ -7,6 +7,7 @@ import {
   IsEnum,
   IsInt,
   IsUrl,
+  IsUUID,
   IsOptional,
   IsString,
   Length,
@@ -86,6 +87,13 @@ export class UpdateJobStageDto {
   stage: JobStage;
 }
 
+/** Corpo do POST /jobs/search (gerar vagas a partir de um currículo). */
+export class SearchJobsDto {
+  @ApiProperty({ format: 'uuid', description: 'Currículo do usuário usado na busca de vagas.' })
+  @IsUUID()
+  resumeId: string;
+}
+
 export class ListJobsQueryDto {
   @ApiPropertyOptional({ enum: JobStage, enumName: 'JobStage', description: 'Filtra por coluna do kanban.' })
   @IsOptional()
@@ -148,7 +156,7 @@ export class JobStatsDto {
   @ApiProperty({ description: 'Entrevistas (etapas "interview" e "offer").' }) interviews: number;
   @ApiProperty({
     description: 'Quantidade por coluna do kanban.',
-    example: { found: 6, applied: 3, interview: 2, offer: 1 },
+    example: { found: 6, applied: 3, interview: 2, offer: 1, rejected: 1 },
   })
   byStage: Record<JobStage, number>;
 }

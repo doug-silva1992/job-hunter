@@ -16,7 +16,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { WorkMode } from '../../jobs/job.entity.js';
-import { SearchFrequency, Seniority, type UserSettings } from '../user-settings.entity.js';
+import { Seniority, type UserSettings } from '../user-settings.entity.js';
 
 export const JOB_AGE_OPTIONS = [1, 3, 7, 15, 30, 60, 90];
 const LIST_MAX = 30;
@@ -97,10 +97,6 @@ export class SettingsDto {
   @IsIn(JOB_AGE_OPTIONS)
   maxJobAgeDays: number;
 
-  @ApiProperty({ enum: SearchFrequency, enumName: 'SearchFrequency' })
-  @IsEnum(SearchFrequency)
-  searchFrequency: SearchFrequency;
-
   @ApiProperty({ description: 'Avisar por e-mail quando surgirem vagas compatíveis.' })
   @IsBoolean()
   notifyNewJobs: boolean;
@@ -124,7 +120,6 @@ export class SettingsResponseDto extends SettingsDto {
       locations: s.locations,
       minSalary: s.minSalary,
       maxJobAgeDays: s.maxJobAgeDays,
-      searchFrequency: s.searchFrequency,
       notifyNewJobs: s.notifyNewJobs,
       weeklySummary: s.weeklySummary,
       updatedAt: saved ? s.updatedAt : null,

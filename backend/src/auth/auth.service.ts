@@ -1,6 +1,8 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DUMMY_PASSWORD_HASH, verifyPassword } from '../common/password.js';
+import { SettingsResponseDto } from '../settings/dto/settings.dto.js';
+import { SettingsService } from '../settings/settings.service.js';
 import { UserResponseDto } from '../users/dto/user-response.dto.js';
 import type { User } from '../users/user.entity.js';
 import { UsersService } from '../users/users.service.js';
@@ -12,6 +14,7 @@ export class AuthService {
   constructor(
     private readonly users: UsersService,
     private readonly jwt: JwtService,
+    private readonly settings: SettingsService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
@@ -27,11 +30,17 @@ export class AuthService {
     return this.session(user);
   }
 
+  /** Token + usuário + preferências, para o frontend já montar a tela configurada. */
   private async session(user: User): Promise<AuthResponseDto> {
     const payload: JwtPayload = { sub: user.id };
+    const [accessToken, { settings, saved }] = await Promise.all([
+      this.jwt.signAsync(payload),
+      this.settings.get(user.id),
+    ]);
     return {
-      accessToken: await this.jwt.signAsync(payload),
+      accessToken,
       user: UserResponseDto.from(user),
+      settings: SettingsResponseDto.from(settings, saved),
     };
   }
 }

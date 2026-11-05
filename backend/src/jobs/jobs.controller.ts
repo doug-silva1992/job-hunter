@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiBadGatewayResponse,
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -29,6 +30,7 @@ import {
   JobResponseDto,
   JobStatsDto,
   ListJobsQueryDto,
+  SearchJobsDto,
   UpdateJobDto,
   UpdateJobStageDto,
 } from './dto/job.dto.js';
@@ -54,6 +56,20 @@ export class JobsController {
   @ApiOkResponse({ type: JobStatsDto })
   stats(@CurrentUser() user: User): Promise<JobStatsDto> {
     return this.jobs.stats(user.id);
+  }
+
+  @Post('search')
+  @ApiOperation({
+    summary: 'Gera vagas a partir de um currículo',
+    description:
+      'Envia ao webhook de busca de vagas do n8n (multipart/form-data) os campos fileName, user_id e resume_id. Retorna a resposta do n8n.',
+  })
+  @ApiCreatedResponse({ description: 'Resposta do webhook do n8n.' })
+  @ApiBadRequestResponse({ description: 'resumeId inválido.' })
+  @ApiNotFoundResponse({ description: 'Currículo não encontrado.' })
+  @ApiBadGatewayResponse({ description: 'O webhook do n8n está indisponível ou retornou erro.' })
+  search(@CurrentUser() user: User, @Body() dto: SearchJobsDto): Promise<unknown> {
+    return this.jobs.search(user.id, dto.resumeId);
   }
 
   @Get(':id')

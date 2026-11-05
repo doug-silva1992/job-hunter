@@ -9,6 +9,7 @@ import {
   USERNAME_MESSAGE,
   USERNAME_REGEX,
 } from '../../common/validation.js';
+import { SettingsResponseDto } from '../../settings/dto/settings.dto.js';
 import { UserResponseDto } from '../../users/dto/user-response.dto.js';
 
 export class LoginDto {
@@ -51,4 +52,10 @@ export class AuthResponseDto {
 
   @ApiProperty({ type: UserResponseDto })
   user: UserResponseDto;
+
+  @ApiProperty({
+    type: SettingsResponseDto,
+    description: 'Preferências do usuário (tabela user_settings), ou os padrões se nunca foram salvas.',
+  })
+  settings: SettingsResponseDto;
 }

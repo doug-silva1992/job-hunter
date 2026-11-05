@@ -1,12 +1,68 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ResumesService } from '../resumes/resumes.service.js';
 import type { CreateJobDto, JobStatsDto, ListJobsQueryDto, UpdateJobDto } from './dto/job.dto.js';
 import { Job, JobStage } from './job.entity.js';
 
+export const DEFAULT_SEARCH_JOBS_WEBHOOK_URL = 'http://localhost:5678/webhook-test/search-jobs';
+
 @Injectable()
 export class JobsService {
-  constructor(@InjectRepository(Job) private readonly repo: Repository<Job>) {}
+  private readonly logger = new Logger(JobsService.name);
+  private readonly searchWebhookUrl: string;
+  private readonly searchWebhookTimeoutMs: number;
+
+  constructor(
+    @InjectRepository(Job) private readonly repo: Repository<Job>,
+    private readonly resumes: ResumesService,
+    config: ConfigService,
+  ) {
+    this.searchWebhookUrl = config.get('N8N_SEARCH_JOBS_WEBHOOK_URL') || DEFAULT_SEARCH_JOBS_WEBHOOK_URL;
+    this.searchWebhookTimeoutMs = Number(config.get('N8N_SEARCH_JOBS_WEBHOOK_TIMEOUT_MS')) || 60_000;
+  }
+
+  /**
+   * Pede ao n8n para buscar vagas para o currículo escolhido. Envia
+   * multipart/form-data com os campos (no n8n chegam em `body`):
+   * - fileName: caminho do arquivo dentro da pasta de currículos (`/curriculos/<userId>/<arquivo>`)
+   * - user_id, resume_id
+   * Retorna a resposta do webhook.
+   */
+  async search(userId: string, resumeId: string): Promise<unknown> {
+    const resume = await this.resumes.findOne(userId, resumeId);
+
+    const form = new FormData();
+    form.append('fileName', `/curriculos/${resume.storageKey}`);
+    form.append('user_id', userId);
+    form.append('resume_id', resume.id);
+
+    let response: Response;
+    try {
+      response = await fetch(this.searchWebhookUrl, {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        body: form,
+        signal: AbortSignal.timeout(this.searchWebhookTimeoutMs),
+      });
+    } catch (error) {
+      this.logger.error(`Falha ao contatar o webhook de busca de vagas (${this.searchWebhookUrl}): ${String(error)}`);
+      throw new BadGatewayException('Não foi possível iniciar a busca de vagas. Tente novamente.');
+    }
+
+    const body = await response.text();
+    if (!response.ok) {
+      this.logger.error(`Webhook de busca de vagas respondeu ${response.status}: ${body.slice(0, 500)}`);
+      throw new BadGatewayException('O serviço de busca de vagas retornou um erro.');
+    }
+    if (!body) return { received: true };
+    try {
+      return JSON.parse(body) as unknown;
+    } catch {
+      return { message: body };
+    }
+  }
 
   /** Ordenado por aderência, como na lista "Vagas recomendadas". */
   list(userId: string, query: ListJobsQueryDto): Promise<Job[]> {

@@ -20,6 +20,9 @@ import { configureApp } from '../src/setup.js';
 
 const PDF = Buffer.from('%PDF-1.4\n% teste\n');
 
+const WEBM = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(64, 1)]);
+const OGG = Buffer.concat([Buffer.from('OggS'), Buffer.alloc(64, 2)]);
+
 describe('Job Hunter API (e2e)', () => {
   let app: INestApplication<App>;
   let uploadDir: string;
@@ -34,6 +37,7 @@ describe('Job Hunter API (e2e)', () => {
     return { ...res.body, password: body.password } as {
       accessToken: string;
       user: { id: string; username: string; email: string };
+      settings: { minMatch: number; updatedAt: string | null };
       password: string;
     };
   }
@@ -62,6 +66,8 @@ describe('Job Hunter API (e2e)', () => {
     process.env.UPLOAD_DIR = uploadDir;
     process.env.JWT_SECRET ??= 'e2e-secret';
     process.env.N8N_ATS_WEBHOOK_URL = 'http://n8n.test/webhook/ats-check';
+    process.env.INTERVIEW_AUDIO_DIR = join(uploadDir, 'entrevistas');
+    delete process.env.N8N_INTERVIEW_WEBHOOK_URL;
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
@@ -87,8 +93,10 @@ describe('Job Hunter API (e2e)', () => {
     });
 
     it('registra normalizando o e-mail e retorna token', async () => {
-      const { user, accessToken } = await register();
+      const { user, accessToken, settings } = await register();
       expect(accessToken).toEqual(expect.any(String));
+      // as preferências vêm junto (padrões enquanto não forem salvas)
+      expect(settings).toMatchObject({ minMatch: 70, updatedAt: null });
       expect(user.email).toBe(user.email.toLowerCase());
       expect(user).not.toHaveProperty('passwordHash');
 
@@ -198,7 +206,7 @@ describe('Job Hunter API (e2e)', () => {
         averageMatch: 82,
         applied: 1,
         interviews: 0,
-        byStage: { found: 1, applied: 1, interview: 0, offer: 0 },
+        byStage: { found: 1, applied: 1, interview: 0, offer: 0, rejected: 0 },
       });
 
       await http().get(`/api/jobs/${created.body.id}`).set(h).expect(200);
@@ -229,6 +237,109 @@ describe('Job Hunter API (e2e)', () => {
       await http().delete(`/api/jobs/${created.body.id}`).set(auth(bob.accessToken)).expect(404);
       const bobList = await http().get('/api/jobs').set(auth(bob.accessToken)).expect(200);
       expect(bobList.body).toEqual([]);
+    });
+  });
+
+  describe('interviews', () => {
+    const job = { company: 'Acme Pay', role: 'Frontend', location: 'São Paulo, SP', workMode: 'remote', match: 90, tags: ['React'] };
+    afterEach(() => {
+      vi.restoreAllMocks();
+      delete process.env.N8N_INTERVIEW_WEBHOOK_URL;
+    });
+
+    async function startInterview() {
+      const { accessToken, user } = await register();
+      const h = auth(accessToken);
+      const created = await http().post('/api/jobs').set(h).send(job).expect(201);
+      const interview = await http().post('/api/interviews').set(h).send({ jobId: created.body.id }).expect(201);
+      expect(interview.body).toMatchObject({ jobId: created.body.id, status: 'in_progress', answers: [] });
+      return { h, user, interviewId: interview.body.id as string };
+    }
+
+    const answer = (h: Record<string, string>, id: string, index: number, audio: Buffer, name = 'resposta.webm') =>
+      http()
+        .post(`/api/interviews/${id}/answers`)
+        .set(h)
+        .field('questionIndex', String(index))
+        .field('question', `Pergunta ${index + 1}?`)
+        .field('durationMs', '4200')
+        .attach('file', audio, name);
+
+    it('grava os áudios na pasta, finaliza e deixa o envio pendente sem webhook configurado', async () => {
+      const { h, user, interviewId } = await startInterview();
+      const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+      const saved = await answer(h, interviewId, 0, WEBM).expect(201);
+      expect(saved.body).toMatchObject({ questionIndex: 0, question: 'Pergunta 1?', mimeType: 'audio/webm', durationMs: 4200 });
+      await answer(h, interviewId, 1, WEBM).expect(201);
+      // regravar a pergunta 2 em outro formato substitui o arquivo anterior
+      await answer(h, interviewId, 1, OGG, 'r.ogg').expect(201);
+
+      const folder = join(uploadDir, 'entrevistas', user.id, interviewId);
+      expect((await readdir(folder)).sort()).toEqual(['00.webm', '01.ogg']);
+
+      const finished = await http().post(`/api/interviews/${interviewId}/finish`).set(h).expect(200);
+      expect(finished.body).toMatchObject({ status: 'finished', delivery: 'pending', sentAt: null });
+      expect(finished.body.answers.map((a: { mimeType: string }) => a.mimeType)).toEqual(['audio/webm', 'audio/ogg']);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      // finalizada não aceita mais respostas
+      await answer(h, interviewId, 2, WEBM).expect(409);
+    });
+
+    it('envia os áudios ao n8n em multipart e permite reenviar após falha', async () => {
+      const { h, user, interviewId } = await startInterview();
+      await answer(h, interviewId, 0, WEBM).expect(201);
+      await answer(h, interviewId, 1, OGG, 'r.ogg').expect(201);
+      process.env.N8N_INTERVIEW_WEBHOOK_URL = 'http://n8n.test/webhook/interview';
+
+      mockN8n(new Response('boom', { status: 500 }));
+      const failed = await http().post(`/api/interviews/${interviewId}/finish`).set(h).expect(200);
+      expect(failed.body).toMatchObject({ status: 'finished', delivery: 'failed' });
+
+      vi.restoreAllMocks();
+      const fetchMock = mockN8n(Response.json({ ok: true }));
+      const sent = await http().post(`/api/interviews/${interviewId}/finish`).set(h).expect(200);
+      expect(sent.body).toMatchObject({ status: 'sent', delivery: 'sent' });
+      expect(sent.body.sentAt).toEqual(expect.any(String));
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://n8n.test/webhook/interview');
+      const form = init.body as FormData;
+      expect(form.get('interviewId')).toBe(interviewId);
+      expect(form.get('userId')).toBe(user.id);
+      expect(JSON.parse(form.get('job') as string)).toMatchObject({ company: 'Acme Pay', role: 'Frontend' });
+      expect(JSON.parse(form.get('answers') as string)).toEqual([
+        { field: 'audio_0', questionIndex: 0, question: 'Pergunta 1?', durationMs: 4200, mimeType: 'audio/webm' },
+        { field: 'audio_1', questionIndex: 1, question: 'Pergunta 2?', durationMs: 4200, mimeType: 'audio/ogg' },
+      ]);
+      const audio0 = form.get('audio_0') as File;
+      expect(audio0.name).toBe('pergunta-01.webm');
+      expect(Buffer.from(await audio0.arrayBuffer()).equals(WEBM)).toBe(true);
+      expect((form.get('audio_1') as File).name).toBe('pergunta-02.ogg');
+
+      // já enviada: não envia de novo
+      await http().post(`/api/interviews/${interviewId}/finish`).set(h).expect(200);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('valida áudio, vaga e dono da entrevista', async () => {
+      const { h, interviewId } = await startInterview();
+      await http().post('/api/interviews').set(h).send({ jobId: randomUUID() }).expect(404);
+      await http().post(`/api/interviews/${interviewId}/finish`).set(h).expect(400); // sem respostas
+      await answer(h, interviewId, 0, PDF, 'falso.webm').expect(400);
+      await http()
+        .post(`/api/interviews/${interviewId}/answers`)
+        .set(h)
+        .field('questionIndex', '0')
+        .field('question', 'x')
+        .field('durationMs', '1')
+        .expect(400); // sem arquivo
+      await answer(h, interviewId, 0, Buffer.concat([WEBM, Buffer.alloc(5 * 1024 * 1024)])).expect(413);
+
+      const other = await register();
+      await http().get(`/api/interviews/${interviewId}`).set(auth(other.accessToken)).expect(404);
+      await answer(auth(other.accessToken), interviewId, 0, WEBM).expect(404);
     });
   });
 
@@ -342,7 +453,6 @@ describe('Job Hunter API (e2e)', () => {
       locations: ['São Paulo, SP'],
       minSalary: 9000,
       maxJobAgeDays: 7,
-      searchFrequency: 'twice_daily',
       notifyNewJobs: false,
       weeklySummary: true,
     };

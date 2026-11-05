@@ -17,12 +17,13 @@ export enum WorkMode {
   Onsite = 'onsite',
 }
 
-/** Colunas do kanban: Encontradas, Candidatado, Entrevista e Oferta. */
+/** Colunas do kanban: Encontradas, Candidatado, Entrevista, Oferta e Rejeitados. */
 export enum JobStage {
   Found = 'found',
   Applied = 'applied',
   Interview = 'interview',
   Offer = 'offer',
+  Rejected = 'rejected',
 }
 
 // Espelha a migration CreateJobs para o TypeORM não tentar removê-los num `migration:generate`.

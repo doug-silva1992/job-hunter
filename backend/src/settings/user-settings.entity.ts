@@ -2,13 +2,6 @@ import { Check, Column, Entity, JoinColumn, OneToOne, PrimaryColumn, UpdateDateC
 import { WorkMode } from '../jobs/job.entity.js';
 import { User } from '../users/user.entity.js';
 
-export enum SearchFrequency {
-  Manual = 'manual',
-  Daily = 'daily',
-  TwiceDaily = 'twice_daily',
-  Weekly = 'weekly',
-}
-
 export enum Seniority {
   Intern = 'intern',
   Junior = 'junior',
@@ -67,15 +60,6 @@ export class UserSettings {
   /** Considera só vagas publicadas nos últimos N dias. */
   @Column({ name: 'max_job_age_days', type: 'smallint', default: 30 })
   maxJobAgeDays: number;
-
-  @Column({
-    name: 'search_frequency',
-    type: 'enum',
-    enum: SearchFrequency,
-    enumName: 'search_frequency',
-    default: SearchFrequency.Daily,
-  })
-  searchFrequency: SearchFrequency;
 
   @Column({ name: 'notify_new_jobs', type: 'boolean', default: true })
   notifyNewJobs: boolean;

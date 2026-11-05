@@ -5,6 +5,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { dataSourceOptions } from './database/typeorm.config.js';
+import { InterviewsModule } from './interviews/interviews.module.js';
 import { JobsModule } from './jobs/jobs.module.js';
 import { ResumesModule } from './resumes/resumes.module.js';
 import { SettingsModule } from './settings/settings.module.js';
@@ -22,6 +23,7 @@ import { UsersModule } from './users/users.module.js';
     ResumesModule,
     JobsModule,
     SettingsModule,
+    InterviewsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

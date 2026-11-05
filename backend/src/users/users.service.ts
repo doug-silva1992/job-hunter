@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { hashPassword, verifyPassword } from '../common/password.js';
 import { isUniqueViolation } from '../common/validation.js';
+import { InterviewsService } from '../interviews/interviews.service.js';
 import { ResumesService } from '../resumes/resumes.service.js';
 import type { UpdateMeDto } from './dto/update-me.dto.js';
 import { User } from './user.entity.js';
@@ -17,6 +18,7 @@ export class UsersService {
   constructor(
     @InjectRepository(User) private readonly repo: Repository<User>,
     private readonly resumes: ResumesService,
+    private readonly interviews: InterviewsService,
   ) {}
 
   findById(id: string): Promise<User | null> {
@@ -69,10 +71,11 @@ export class UsersService {
     return (await this.findById(saved.id))!;
   }
 
-  /** Exclui a conta; currículos e vagas saem junto (ON DELETE CASCADE) e os arquivos são apagados do disco. */
+  /** Exclui a conta; currículos, vagas e entrevistas saem junto (ON DELETE CASCADE) e os arquivos são apagados do disco. */
   async remove(userId: string): Promise<void> {
     await this.repo.delete({ id: userId });
     await this.resumes.deleteUserFolder(userId);
+    await this.interviews.deleteUserFolder(userId);
   }
 
   private async assertAvailable(fields: { username?: string; email?: string }, exceptId?: string) {

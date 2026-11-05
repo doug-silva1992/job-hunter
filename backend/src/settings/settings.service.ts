@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WorkMode } from '../jobs/job.entity.js';
 import type { SettingsDto } from './dto/settings.dto.js';
-import { SearchFrequency, UserSettings } from './user-settings.entity.js';
+import { UserSettings } from './user-settings.entity.js';
 
 export const DEFAULT_SETTINGS: SettingsDto = {
   minMatch: 70,
@@ -14,7 +14,6 @@ export const DEFAULT_SETTINGS: SettingsDto = {
   locations: [],
   minSalary: null,
   maxJobAgeDays: 30,
-  searchFrequency: SearchFrequency.Daily,
   notifyNewJobs: true,
   weeklySummary: false,
 };
