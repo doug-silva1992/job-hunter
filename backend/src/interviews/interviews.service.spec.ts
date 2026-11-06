@@ -7,6 +7,7 @@ import type { Repository } from 'typeorm';
 import type { Job } from '../jobs/job.entity.js';
 import type { User } from '../users/user.entity.js';
 import type { InterviewReport } from './interview-report.entity.js';
+import type { TechnicalInterview } from './technical-interview.entity.js';
 import { AUDIO_FIELDS, InterviewsService, type AudioFiles } from './interviews.service.js';
 
 const user = { id: 'u1', username: 'douglas', email: 'd@example.com' } as User;
@@ -35,6 +36,7 @@ describe('InterviewsService.submit', () => {
       reports as unknown as Repository<InterviewReport>,
       jobs as unknown as Repository<Job>,
       config as unknown as ConfigService,
+      {} as Repository<TechnicalInterview>,
     );
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -71,6 +73,28 @@ describe('InterviewsService.submit', () => {
     delete files.pergunta3;
     await expect(service.submit(user, 'j1', files)).rejects.toBeInstanceOf(BadRequestException);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('envia o pedido de entrevista técnica com a descrição digitada', async () => {
+    reports.findOne.mockResolvedValue({ id: 'r1', userId: 'u1', jobId: 'j1', cargo: 'Tech Lead', requisitos: 'Java' });
+    const answer = { sucesso: true, perguntas: [{ pergunta: 'P1' }] };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(answer), { status: 200 }));
+
+    await expect(service.requestTechnical(user, 'r1', 'Foco em Spring Boot')).resolves.toEqual(answer);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://localhost:5678/webhook-test/technical_interview');
+    const form = init.body as FormData;
+    expect(Object.fromEntries(form.entries())).toEqual({
+      user_id: 'u1',
+      interview_id: 'r1',
+      job_id: 'j1',
+      nome: 'douglas',
+      email: 'd@example.com',
+      cargo: 'Tech Lead',
+      requisitos: 'Java',
+      descricao: 'Foco em Spring Boot',
+    });
   });
 
   it('apaga os áudios salvos se o n8n falhar', async () => {

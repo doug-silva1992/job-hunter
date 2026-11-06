@@ -12,14 +12,18 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
+import { IsNull, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { Job } from '../jobs/job.entity.js';
 import type { User } from '../users/user.entity.js';
 import { inspectAudio } from './audio-file.js';
 import { QUESTION_COUNT } from './dto/interview-report.dto.js';
 import { InterviewReport } from './interview-report.entity.js';
+import { TechnicalInterview } from './technical-interview.entity.js';
 
 export const DEFAULT_INTERVIEW_WEBHOOK_URL = 'http://localhost:5678/webhook-test/interview_training';
+export const DEFAULT_TECHNICAL_WEBHOOK_URL = 'http://localhost:5678/webhook-test/technical_interview';
+
+type Webhook = { url: string; timeoutMs: number; label: string };
 
 export type AudioFiles = Partial<Record<string, Express.Multer.File[]>>;
 
@@ -40,17 +44,26 @@ const MIME_BY_EXT: Record<string, string> = {
 export class InterviewsService implements OnModuleInit {
   private readonly logger = new Logger(InterviewsService.name);
   private readonly audioDir: string;
-  private readonly webhookUrl: string;
-  private readonly webhookTimeoutMs: number;
+  private readonly interviewWebhook: Webhook;
+  private readonly technicalWebhook: Webhook;
 
   constructor(
     @InjectRepository(InterviewReport) private readonly reports: Repository<InterviewReport>,
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
     config: ConfigService,
+    @InjectRepository(TechnicalInterview) private readonly technicals: Repository<TechnicalInterview>,
   ) {
     this.audioDir = resolve(config.get('INTERVIEW_AUDIO_DIR', 'storage/entrevistas'));
-    this.webhookUrl = config.get('N8N_INTERVIEW_WEBHOOK_URL') || DEFAULT_INTERVIEW_WEBHOOK_URL;
-    this.webhookTimeoutMs = Number(config.get('N8N_INTERVIEW_WEBHOOK_TIMEOUT_MS')) || 180_000;
+    this.interviewWebhook = {
+      url: config.get('N8N_INTERVIEW_WEBHOOK_URL') || DEFAULT_INTERVIEW_WEBHOOK_URL,
+      timeoutMs: Number(config.get('N8N_INTERVIEW_WEBHOOK_TIMEOUT_MS')) || 180_000,
+      label: 'entrevista',
+    };
+    this.technicalWebhook = {
+      url: config.get('N8N_TECHNICAL_INTERVIEW_WEBHOOK_URL') || DEFAULT_TECHNICAL_WEBHOOK_URL,
+      timeoutMs: Number(config.get('N8N_TECHNICAL_INTERVIEW_WEBHOOK_TIMEOUT_MS')) || 120_000,
+      label: 'entrevista técnica',
+    };
   }
 
   async onModuleInit() {
@@ -65,6 +78,14 @@ export class InterviewsService implements OnModuleInit {
     const report = await this.reports.findOne({ where: { id, userId }, relations: { job: true } });
     if (!report) throw new NotFoundException('Relatório de entrevista não encontrado.');
     return report;
+  }
+
+  /** Entrevista técnica mais recente (com perguntas) gerada a partir do relatório, se houver. */
+  findTechnical(userId: string, interviewId: string): Promise<TechnicalInterview | null> {
+    return this.technicals.findOne({
+      where: { userId, interviewId, pergunta1: Not(IsNull()) },
+      order: { createdAt: 'DESC' },
+    });
   }
 
   /** Perguntas que têm áudio salvo em <userId>/<relatórioId>/. */
@@ -121,7 +142,7 @@ export class InterviewsService implements OnModuleInit {
       }
 
       const startedAt = new Date(Date.now() - 5_000);
-      const body = await this.postToN8n(form);
+      const body = await this.postToN8n(this.interviewWebhook, form);
       const report = await this.findCreatedReport(user.id, body, startedAt);
 
       await rename(tempFolder, this.folder(user.id, report.id));
@@ -131,6 +152,27 @@ export class InterviewsService implements OnModuleInit {
       await rm(tempFolder, { recursive: true, force: true }).catch(() => undefined);
       throw error;
     }
+  }
+
+  /**
+   * Pede ao fluxo "Technical Interview" do n8n (webhook technical_interview) as 6 perguntas técnicas,
+   * a partir do relatório. multipart/form-data: user_id, interview_id, job_id, nome, email, cargo,
+   * requisitos e descricao (texto digitado na modal). O n8n grava em "technical_interview" e responde
+   * { sucesso, interview_id, cargo, nivel, perguntas }, que é devolvido como veio.
+   */
+  async requestTechnical(user: User, id: string, descricao: string): Promise<unknown> {
+    const report = await this.findOne(user.id, id);
+    const form = new FormData();
+    form.append('user_id', user.id);
+    form.append('interview_id', report.id);
+    // sem vaga ligada (relatórios antigos) o campo não vai: o n8n grava null
+    if (report.jobId) form.append('job_id', report.jobId);
+    form.append('nome', user.username);
+    form.append('email', user.email);
+    form.append('cargo', report.cargo ?? report.job?.role ?? '');
+    if (report.requisitos) form.append('requisitos', report.requisitos);
+    form.append('descricao', descricao);
+    return (await this.postToN8n(this.technicalWebhook, form)) ?? { sucesso: true };
   }
 
   async remove(userId: string, id: string): Promise<void> {
@@ -148,23 +190,23 @@ export class InterviewsService implements OnModuleInit {
     );
   }
 
-  private async postToN8n(form: FormData): Promise<unknown> {
+  private async postToN8n(webhook: Webhook, form: FormData): Promise<unknown> {
     let response: Response;
     try {
-      response = await fetch(this.webhookUrl, {
+      response = await fetch(webhook.url, {
         method: 'POST',
         headers: { Accept: 'application/json' },
         body: form,
-        signal: AbortSignal.timeout(this.webhookTimeoutMs),
+        signal: AbortSignal.timeout(webhook.timeoutMs),
       });
     } catch (error) {
-      this.logger.error(`Falha ao contatar o webhook de entrevista (${this.webhookUrl}): ${String(error)}`);
-      throw new BadGatewayException('Não foi possível enviar as respostas para análise. Tente novamente.');
+      this.logger.error(`Falha ao contatar o webhook de ${webhook.label} (${webhook.url}): ${String(error)}`);
+      throw new BadGatewayException(`Não foi possível enviar a ${webhook.label} ao n8n. Tente novamente.`);
     }
     const text = await response.text();
     if (!response.ok) {
-      this.logger.error(`Webhook de entrevista respondeu ${response.status}: ${text.slice(0, 500)}`);
-      throw new BadGatewayException('O serviço de análise de entrevistas retornou um erro.');
+      this.logger.error(`Webhook de ${webhook.label} respondeu ${response.status}: ${text.slice(0, 500)}`);
+      throw new BadGatewayException(`O serviço de ${webhook.label} do n8n retornou um erro.`);
     }
     try {
       return text ? (JSON.parse(text) as unknown) : null;
