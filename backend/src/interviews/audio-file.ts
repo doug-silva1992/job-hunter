@@ -1,4 +1,4 @@
-/** 5 MB: cabe no limite de 6 MB do nginx; o front grava em ~64 kbps (≈10 min). */
+/** 5 MB por áudio (os 4 juntos cabem no limite de 25 MB do nginx); o front grava em ~64 kbps (≈10 min). */
 export const MAX_AUDIO_SIZE = 5 * 1024 * 1024;
 
 type AudioType = { extension: string; mimeType: string; test: (b: Buffer) => boolean };

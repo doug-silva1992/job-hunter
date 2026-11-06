@@ -1,0 +1,10 @@
+Coloque aqui os áudios da Simulação de Entrevista (nomes exatos):
+
+  Pergunta 1.mp3  - Fale um pouco sobre você e sua trajetória profissional.
+  Pergunta 2.mp3  - Quais são seus principais pontos fortes e como eles contribuem para o seu trabalho?
+  Pergunta 3.mp3  - Conte sobre um desafio que você enfrentou profissionalmente e como o resolveu.
+  Pergunta 4.mp3  - Por que você tem interesse nesta vaga e o que espera alcançar na empresa?
+  Finalizacao.mp3 - Mensagem de encerramento da simulação.
+
+Eles são servidos em /audio/entrevista/. Enquanto um arquivo não existir,
+a pergunta é lida pela voz do navegador.

@@ -4,8 +4,8 @@ export type InterviewRole = 'interviewer' | 'candidate'
 /** Na resposta do candidato, `text` é só um marcador: a resposta é o áudio gravado. */
 export type InterviewMessage = { role: InterviewRole; text: string }
 
-/** Próxima fala do entrevistador; `done` encerra a simulação. */
-export type InterviewTurn = { message: string; done: boolean }
+/** Próxima fala do entrevistador; `done` encerra a simulação. `audioUrl` é o áudio gravado da fala, se houver. */
+export type InterviewTurn = { message: string; done: boolean; audioUrl?: string }
 
 /**
  * Contrato do entrevistador: recebe a vaga e o histórico completo e devolve a próxima fala.
@@ -13,47 +13,37 @@ export type InterviewTurn = { message: string; done: boolean }
  */
 export type Interviewer = (job: Job, history: InterviewMessage[]) => Promise<InterviewTurn>
 
-const ACKS = ['Entendi, obrigado.', 'Ótimo, obrigado por compartilhar.', 'Certo.', 'Interessante.']
+/**
+ * Áudios das perguntas: frontend/public/audio/entrevista/Pergunta N.mp3
+ * (servidos em /audio/entrevista/). Se o arquivo não existir, o texto é lido pela voz do navegador.
+ */
+const AUDIO_DIR = `${import.meta.env.BASE_URL}audio/entrevista/`
+const questionAudio = (n: number) => AUDIO_DIR + encodeURIComponent(`Pergunta ${n}.mp3`)
+const CLOSING_AUDIO = AUDIO_DIR + encodeURIComponent('Finalizacao.mp3')
 
-function workModeQuestion(job: Job): string {
-  switch (job.workMode) {
-    case 'remote':
-      return 'A vaga é remota. Como você organiza sua rotina e a comunicação com o time trabalhando à distância?'
-    case 'hybrid':
-      return `O modelo é híbrido, com alguns dias presenciais em ${job.location}. Isso funciona para você?`
-    case 'onsite':
-      return `A vaga é presencial em ${job.location}. Como fica a sua disponibilidade para trabalhar lá?`
-  }
-}
+export const QUESTIONS: { text: string; audioUrl: string }[] = [
+  'Fale um pouco sobre você e sua trajetória profissional.',
+  'Quais são seus principais pontos fortes e como eles contribuem para o seu trabalho?',
+  'Conte sobre um desafio que você enfrentou profissionalmente e como o resolveu.',
+  'Por que você tem interesse nesta vaga e o que espera alcançar na empresa?',
+].map((text, i) => ({ text, audioUrl: questionAudio(i + 1) }))
 
-function questions(job: Job): string[] {
-  return [
-    `Olá! Obrigado pelo interesse na vaga de ${job.role} na ${job.company}. Para começar, me conte um pouco sobre você e a sua trajetória profissional.`,
-    `O que te atraiu nesta vaga e na ${job.company}?`,
-    ...job.tags
-      .slice(0, 3)
-      .map((t) => `Como tem sido a sua experiência com ${t}? Conte sobre um projeto em que você usou essa tecnologia.`),
-    'Fale de um desafio difícil que você enfrentou no trabalho. Qual era a situação, o que você fez e qual foi o resultado?',
-    workModeQuestion(job),
-    'Para terminar: você tem alguma pergunta sobre a vaga ou sobre a empresa?',
-  ]
-}
-
-function closing(history: InterviewMessage[]): string {
+/** Fala de encerramento (também usada quando o candidato finaliza antes da última pergunta). */
+export function closingTurn(history: InterviewMessage[]): InterviewTurn {
   const answers = history.filter((m) => m.role === 'candidate').length
-  return `Obrigado pela conversa! Encerramos a simulação com ${answers} ${answers === 1 ? 'resposta gravada' : 'respostas gravadas'}. Agora vou enviar os seus áudios para análise.`
+  const message = `Obrigado pela conversa! Encerramos a simulação com ${answers} ${answers === 1 ? 'resposta gravada' : 'respostas gravadas'}.`
+  return { message, audioUrl: CLOSING_AUDIO, done: true }
 }
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** PROVISÓRIO: roteiro fixo montado a partir da vaga, enquanto o entrevistador com IA não fica pronto. */
-export const scriptedInterviewer: Interviewer = async (job, history) => {
+/** PROVISÓRIO: roteiro fixo de perguntas (com áudio gravado), enquanto o entrevistador com IA não fica pronto. */
+export const scriptedInterviewer: Interviewer = async (_job, history) => {
   await pause(600)
-  const list = questions(job)
   const asked = history.filter((m) => m.role === 'interviewer').length
-  if (asked >= list.length) return { message: closing(history), done: true }
-  const ack = asked > 0 ? `${ACKS[(asked - 1) % ACKS.length]} ` : ''
-  return { message: ack + list[asked], done: false }
+  if (asked >= QUESTIONS.length) return closingTurn(history)
+  const q = QUESTIONS[asked]
+  return { message: q.text, audioUrl: q.audioUrl, done: false }
 }
 
 /** Troque aqui pelo entrevistador com IA quando ele estiver pronto. */

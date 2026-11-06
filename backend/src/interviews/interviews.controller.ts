@@ -1,27 +1,32 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Post,
-  UploadedFile,
+  StreamableFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import {
+  ApiBadGatewayResponse,
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
-  ApiConflictResponse,
   ApiConsumes,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiPayloadTooLargeResponse,
+  ApiProduces,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -29,13 +34,12 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { User } from '../users/user.entity.js';
 import { MAX_AUDIO_SIZE } from './audio-file.js';
 import {
-  FinishInterviewResponseDto,
-  InterviewAnswerResponseDto,
-  InterviewResponseDto,
-  SaveAnswerDto,
-  StartInterviewDto,
-} from './dto/interview.dto.js';
-import { InterviewsService } from './interviews.service.js';
+  InterviewReportDto,
+  InterviewReportSummaryDto,
+  QUESTION_COUNT,
+  SubmitInterviewDto,
+} from './dto/interview-report.dto.js';
+import { AUDIO_FIELDS, InterviewsService, type AudioFiles } from './interviews.service.js';
 
 @ApiTags('interviews')
 @ApiBearerAuth()
@@ -44,63 +48,82 @@ import { InterviewsService } from './interviews.service.js';
 export class InterviewsController {
   constructor(private readonly interviews: InterviewsService) {}
 
+  @Get()
+  @ApiOperation({ summary: 'Relatórios das simulações de entrevista (mais recentes primeiro)' })
+  @ApiOkResponse({ type: [InterviewReportSummaryDto] })
+  async list(@CurrentUser() user: User): Promise<InterviewReportSummaryDto[]> {
+    return (await this.interviews.list(user.id)).map((r) => InterviewReportSummaryDto.from(r));
+  }
+
   @Post()
-  @ApiOperation({ summary: 'Inicia uma simulação de entrevista para a vaga' })
-  @ApiCreatedResponse({ type: InterviewResponseDto })
-  @ApiNotFoundResponse({ description: 'Vaga não encontrada.' })
-  async start(@CurrentUser() user: User, @Body() dto: StartInterviewDto): Promise<InterviewResponseDto> {
-    return InterviewResponseDto.from(await this.interviews.start(user.id, dto.jobId));
-  }
-
-  @Get(':id')
-  @ApiOkResponse({ type: InterviewResponseDto })
-  @ApiNotFoundResponse()
-  async findOne(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string): Promise<InterviewResponseDto> {
-    return InterviewResponseDto.from(await this.interviews.findOne(user.id, id));
-  }
-
-  @Post(':id/answers')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_AUDIO_SIZE, files: 1 } }))
-  @ApiOperation({ summary: 'Salva o áudio de uma resposta (regravar a mesma pergunta substitui)' })
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      AUDIO_FIELDS.map((name) => ({ name, maxCount: 1 })),
+      { limits: { fileSize: MAX_AUDIO_SIZE, files: QUESTION_COUNT } },
+    ),
+  )
+  @ApiOperation({
+    summary: 'Salva os áudios da simulação e envia ao n8n para avaliação',
+    description:
+      'Espera o fluxo "interview_training" do n8n avaliar (pode levar até alguns minutos) e devolve o relatório criado.',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['file', 'questionIndex', 'question', 'durationMs'],
+      required: ['jobId', ...AUDIO_FIELDS],
       properties: {
-        file: { type: 'string', format: 'binary', description: 'WebM, Ogg, MP4, WAV ou MP3, até 5 MB.' },
-        questionIndex: { type: 'integer', minimum: 0 },
-        question: { type: 'string' },
-        durationMs: { type: 'integer', minimum: 0 },
+        jobId: { type: 'string', format: 'uuid' },
+        ...Object.fromEntries(
+          AUDIO_FIELDS.map((f, i) => [
+            f,
+            { type: 'string', format: 'binary', description: `Resposta da pergunta ${i + 1} (até 5 MB).` },
+          ]),
+        ),
       },
     },
   })
-  @ApiCreatedResponse({ type: InterviewAnswerResponseDto })
+  @ApiCreatedResponse({ type: InterviewReportDto })
   @ApiBadRequestResponse({ description: 'Áudio ausente, vazio ou em formato não suportado.' })
-  @ApiPayloadTooLargeResponse({ description: 'Áudio maior que 5 MB.' })
-  @ApiConflictResponse({ description: 'A entrevista já foi finalizada.' })
-  @ApiNotFoundResponse()
-  async saveAnswer(
+  @ApiPayloadTooLargeResponse({ description: 'Algum áudio passa de 5 MB.' })
+  @ApiNotFoundResponse({ description: 'Vaga não encontrada.' })
+  @ApiBadGatewayResponse({ description: 'O webhook do n8n está indisponível ou retornou erro.' })
+  async submit(
     @CurrentUser() user: User,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: SaveAnswerDto,
-    @UploadedFile() file: Express.Multer.File | undefined,
-  ): Promise<InterviewAnswerResponseDto> {
-    return InterviewAnswerResponseDto.from(await this.interviews.saveAnswer(user.id, id, dto, file));
+    @Body() dto: SubmitInterviewDto,
+    @UploadedFiles() files: AudioFiles | undefined,
+  ): Promise<InterviewReportDto> {
+    const report = await this.interviews.submit(user, dto.jobId, files ?? {});
+    return InterviewReportDto.fromReport(report, await this.interviews.savedAudios(report));
   }
 
-  @Post(':id/finish')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Finaliza a entrevista e envia os áudios ao n8n',
-    description:
-      'Chame de novo para reenviar se `delivery` vier "failed" ou "pending". Sem N8N_INTERVIEW_WEBHOOK_URL nada é enviado.',
-  })
-  @ApiOkResponse({ type: FinishInterviewResponseDto })
-  @ApiBadRequestResponse({ description: 'Nenhuma resposta gravada.' })
+  @Get(':id')
+  @ApiOkResponse({ type: InterviewReportDto })
   @ApiNotFoundResponse()
-  async finish(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string): Promise<FinishInterviewResponseDto> {
-    const { interview, delivery } = await this.interviews.finish(user.id, id);
-    return { ...InterviewResponseDto.from(interview), delivery };
+  async findOne(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string): Promise<InterviewReportDto> {
+    const report = await this.interviews.findOne(user.id, id);
+    return InterviewReportDto.fromReport(report, await this.interviews.savedAudios(report));
+  }
+
+  @Get(':id/audio/:question')
+  @ApiOperation({ summary: 'Áudio salvo da resposta (pergunta 1 a 4)' })
+  @ApiProduces('audio/*')
+  @ApiOkResponse({ description: 'Arquivo de áudio.' })
+  @ApiNotFoundResponse()
+  async audio(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('question', ParseIntPipe) question: number,
+  ): Promise<StreamableFile> {
+    const { stream, mimeType } = await this.interviews.openAudio(user.id, id, question);
+    return new StreamableFile(stream, { type: mimeType });
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiNoContentResponse({ description: 'Relatório e áudios removidos.' })
+  @ApiNotFoundResponse()
+  async remove(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    await this.interviews.remove(user.id, id);
   }
 }

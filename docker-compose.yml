@@ -39,8 +39,8 @@ services:
       N8N_ATS_WEBHOOK_URL: http://host.docker.internal:5678/webhook-test/ats-check
       N8N_SEARCH_JOBS_WEBHOOK_URL: http://host.docker.internal:5678/webhook-test/search-jobs
       INTERVIEW_AUDIO_DIR: storage/entrevistas
-      # vazio até o fluxo do n8n existir (ex.: http://host.docker.internal:5678/webhook-test/interview)
-      N8N_INTERVIEW_WEBHOOK_URL: ""
+      N8N_INTERVIEW_WEBHOOK_URL: http://host.docker.internal:5678/webhook-test/interview_training
+      N8N_INTERVIEW_WEBHOOK_TIMEOUT_MS: "180000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

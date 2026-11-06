@@ -3,8 +3,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type Take = { blob: Blob; url: string; durationMs: number }
 
-// Chrome/Edge/Firefox gravam WebM/Opus; Safari grava MP4/AAC.
-const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
+// Preferência por formatos que o Gemini (avaliação no n8n) aceita: MP4/AAC (Chrome recente, Safari) e Ogg (Firefox).
+// WebM fica por último, para navegadores que só gravam nele.
+const MIME_TYPES = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm']
 
 function errorMessage(error: unknown): string {
   const name = (error as { name?: string } | null)?.name

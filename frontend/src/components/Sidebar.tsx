@@ -1,5 +1,6 @@
 import DashboardOutlined from '@mui/icons-material/DashboardOutlined'
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined'
+import RecordVoiceOverOutlined from '@mui/icons-material/RecordVoiceOverOutlined'
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined'
 import WorkOutlineOutlined from '@mui/icons-material/WorkOutlineOutlined'
 import Box from '@mui/material/Box'
@@ -19,6 +20,7 @@ const menu: { label: string; path: string; icon: ReactNode }[] = [
   { label: 'Dashboard', path: '/', icon: <DashboardOutlined /> },
   { label: 'Vagas', path: '/vagas', icon: <WorkOutlineOutlined /> },
   { label: 'Currículos', path: '/curriculos', icon: <DescriptionOutlined /> },
+  { label: 'Entrevistas', path: '/entrevistas', icon: <RecordVoiceOverOutlined /> },
   { label: 'Configurações', path: '/configuracoes', icon: <SettingsOutlined /> },
 ]
 
@@ -38,7 +40,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         {menu.map((item) => (
           <ListItemButton
             key={item.path}
-            selected={pathname === item.path}
+            selected={item.path === '/' ? pathname === '/' : pathname.startsWith(item.path)}
             onClick={() => {
               navigate(item.path)
               onNavigate?.()

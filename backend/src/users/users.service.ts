@@ -71,7 +71,7 @@ export class UsersService {
     return (await this.findById(saved.id))!;
   }
 
-  /** Exclui a conta; currículos, vagas e entrevistas saem junto (ON DELETE CASCADE) e os arquivos são apagados do disco. */
+  /** Exclui a conta; currículos, vagas e relatórios de entrevista saem junto (ON DELETE CASCADE) e os arquivos são apagados do disco. */
   async remove(userId: string): Promise<void> {
     await this.repo.delete({ id: userId });
     await this.resumes.deleteUserFolder(userId);

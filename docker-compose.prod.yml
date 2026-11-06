@@ -33,7 +33,7 @@ services:
       N8N_ATS_WEBHOOK_URL: ${N8N_ATS_WEBHOOK_URL:?Defina N8N_ATS_WEBHOOK_URL no .env}
       N8N_SEARCH_JOBS_WEBHOOK_URL: ${N8N_SEARCH_JOBS_WEBHOOK_URL:?Defina N8N_SEARCH_JOBS_WEBHOOK_URL no .env}
       INTERVIEW_AUDIO_DIR: /app/storage/entrevistas
-      N8N_INTERVIEW_WEBHOOK_URL: ${N8N_INTERVIEW_WEBHOOK_URL:-}
+      N8N_INTERVIEW_WEBHOOK_URL: ${N8N_INTERVIEW_WEBHOOK_URL:?Defina N8N_INTERVIEW_WEBHOOK_URL no .env}
     volumes:
       - curriculos:/app/storage/curriculos
       - entrevistas:/app/storage/entrevistas

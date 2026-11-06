@@ -1,5 +1,6 @@
 import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded'
 import CloseRounded from '@mui/icons-material/CloseRounded'
+import AssessmentOutlined from '@mui/icons-material/AssessmentOutlined'
 import FlagRounded from '@mui/icons-material/FlagRounded'
 import MicRounded from '@mui/icons-material/MicRounded'
 import ReplayRounded from '@mui/icons-material/ReplayRounded'
@@ -21,11 +22,12 @@ import Typography from '@mui/material/Typography'
 import { keyframes, useTheme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
-import { interviewsApi, type FinishedInterview } from '../api/interviews'
+import { interviewsApi, type InterviewReport } from '../api/interviews'
 import type { Job } from '../api/jobs'
 import { CompanyAvatar } from '../components/CompanyAvatar'
-import { interviewer, type InterviewMessage } from './interviewer'
+import { closingTurn, interviewer, QUESTIONS, type InterviewMessage } from './interviewer'
 import { formatDuration, useAudioRecorder, type Take } from './recorder'
 import { useSpeechSynthesis } from './speech'
 
@@ -33,10 +35,10 @@ const MAX_ANSWER_MS = 5 * 60 * 1000
 const AUDIO_ANSWER = '(resposta em áudio)'
 
 type Message =
-  | { id: number; role: 'interviewer'; text: string }
-  | { id: number; role: 'candidate'; audioUrl: string; durationMs: number }
+  | { id: number; role: 'interviewer'; text: string; audioUrl?: string }
+  | { id: number; role: 'candidate'; audioUrl: string; blob: Blob; durationMs: number }
 
-type Busy = 'starting' | 'uploading' | 'thinking' | 'finishing' | null
+type Busy = 'starting' | 'thinking' | 'sending' | null
 
 let seq = 0
 
@@ -46,30 +48,31 @@ const pulse = keyframes`
   100% { box-shadow: 0 0 0 0 rgba(201, 55, 44, 0); }
 `
 
-const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback)
-
 const toHistory = (messages: Message[]): InterviewMessage[] =>
   messages.map((m) => (m.role === 'interviewer' ? { role: m.role, text: m.text } : { role: m.role, text: AUDIO_ANSWER }))
 
 type Props = { job: Job; onClose: () => void }
 
 /**
- * Simulação de entrevista: o entrevistador pergunta (em voz alta), o candidato grava a resposta,
- * cada áudio é salvo no backend e, ao finalizar, o backend envia tudo ao n8n.
+ * Simulação de entrevista: o entrevistador pergunta (em voz alta) e o candidato grava a resposta.
+ * Ao responder todas as perguntas, os áudios são salvos no backend e enviados ao n8n, que avalia e
+ * grava o relatório (tela Entrevistas).
  * Montar só quando aberta: o estado zera a cada abertura.
  */
 export function InterviewDialog({ job, onClose }: Props) {
   const theme = useTheme()
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'))
 
-  const [interviewId, setInterviewId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [take, setTake] = useState<Take | null>(null)
   const [busy, setBusy] = useState<Busy>('starting')
   const [error, setError] = useState<string | null>(null)
-  const [startFailed, setStartFailed] = useState(false)
-  const [finished, setFinished] = useState<FinishedInterview | null>(null)
+  const [finished, setFinished] = useState(false)
+  const [report, setReport] = useState<InterviewReport | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const navigate = useNavigate()
   const [voiceOn, setVoiceOn] = useState(true)
+  const answersRef = useRef<Blob[]>([])
 
   const { supported: ttsSupported, speak, cancel: stopSpeaking } = useSpeechSynthesis()
   const recorder = useAudioRecorder(MAX_ANSWER_MS, setTake)
@@ -98,40 +101,37 @@ export function InterviewDialog({ job, onClose }: Props) {
   const lastQuestion = [...messages].reverse().find((m) => m.role === 'interviewer')
 
   const say = useCallback(
-    (text: string) => {
-      setMessages((m) => [...m, { id: ++seq, role: 'interviewer', text }])
-      if (voiceRef.current) speak(text)
+    (text: string, audioUrl?: string) => {
+      setMessages((m) => [...m, { id: ++seq, role: 'interviewer', text, audioUrl }])
+      if (voiceRef.current) speak(text, audioUrl)
     },
     [speak],
   )
 
-  const finish = useCallback(async (id: string) => {
+  /** Salva e envia os áudios para avaliação; só com todas as perguntas respondidas. */
+  const submit = useCallback(async () => {
     const session = sessionRef.current
-    setBusy('finishing')
-    setError(null)
+    setBusy('sending')
+    setSendError(null)
     try {
-      const result = await interviewsApi.finish(id)
-      if (session === sessionRef.current) setFinished(result)
+      const created = await interviewsApi.submit(job.id, answersRef.current)
+      if (session === sessionRef.current) setReport(created)
     } catch (e) {
-      if (session === sessionRef.current) setError(errorText(e, 'Não foi possível finalizar a entrevista.'))
+      if (session === sessionRef.current)
+        setSendError(e instanceof ApiError ? e.message : 'Não foi possível enviar as respostas para análise.')
     } finally {
       if (session === sessionRef.current) setBusy(null)
     }
-  }, [])
+  }, [job.id])
 
   const begin = useCallback(async () => {
     const session = sessionRef.current
     try {
-      const created = await interviewsApi.start(job.id)
-      if (session !== sessionRef.current) return
-      setInterviewId(created.id)
       const turn = await interviewer(job, [])
       if (session !== sessionRef.current) return
-      say(turn.message)
-    } catch (e) {
-      if (session !== sessionRef.current) return
-      setStartFailed(true)
-      setError(errorText(e, 'Não foi possível iniciar a entrevista.'))
+      say(turn.message, turn.audioUrl)
+    } catch {
+      if (session === sessionRef.current) setError('Não foi possível iniciar a entrevista.')
     } finally {
       if (session === sessionRef.current) setBusy(null)
     }
@@ -139,7 +139,7 @@ export function InterviewDialog({ job, onClose }: Props) {
 
   useEffect(() => {
     const session = sessionRef // contador, não um nó do DOM
-    // begin() só altera o estado depois das respostas da API (busca ao abrir a modal)
+    // begin() só altera o estado depois que o entrevistador responde
     // oxlint-disable-next-line react/set-state-in-effect
     void begin()
     return () => {
@@ -148,28 +148,17 @@ export function InterviewDialog({ job, onClose }: Props) {
   }, [begin])
 
   const sendAnswer = async () => {
-    if (!take || !interviewId || !lastQuestion || lastQuestion.role !== 'interviewer') return
+    if (!take || !lastQuestion || lastQuestion.role !== 'interviewer') return
     const session = sessionRef.current
     stopSpeaking()
-    setBusy('uploading')
     setError(null)
-    try {
-      await interviewsApi.uploadAnswer(interviewId, {
-        audio: take.blob,
-        questionIndex: answered,
-        question: lastQuestion.text,
-        durationMs: take.durationMs,
-      })
-    } catch (e) {
-      if (session !== sessionRef.current) return
-      setError(errorText(e, 'Não foi possível salvar a resposta.'))
-      setBusy(null)
-      return // a gravação continua na tela para tentar de novo
-    }
-    if (session !== sessionRef.current) return
 
     urlsRef.current.push(take.url)
-    const next: Message[] = [...messages, { id: ++seq, role: 'candidate', audioUrl: take.url, durationMs: take.durationMs }]
+    const next: Message[] = [
+      ...messages,
+      { id: ++seq, role: 'candidate', audioUrl: take.url, blob: take.blob, durationMs: take.durationMs },
+    ]
+    answersRef.current = next.flatMap((m) => (m.role === 'candidate' ? [m.blob] : []))
     setMessages(next)
     setTake(null)
     setBusy('thinking')
@@ -177,10 +166,10 @@ export function InterviewDialog({ job, onClose }: Props) {
     try {
       const turn = await interviewer(job, toHistory(next))
       if (session !== sessionRef.current) return
-      say(turn.message)
+      say(turn.message, turn.audioUrl)
       if (turn.done) {
-        await finish(interviewId)
-        return
+        setFinished(true)
+        if (answersRef.current.length >= QUESTIONS.length) return void (await submit())
       }
     } catch {
       if (session === sessionRef.current) setError('O entrevistador não respondeu. Tente finalizar a entrevista.')
@@ -199,12 +188,10 @@ export function InterviewDialog({ job, onClose }: Props) {
     void recorder.start()
   }
 
-  const retryStart = () => {
-    sessionRef.current++
-    setError(null)
-    setStartFailed(false)
-    setBusy('starting')
-    void begin()
+  const finishEarly = () => {
+    const turn = closingTurn(toHistory(messages))
+    say(turn.message, turn.audioUrl)
+    setFinished(true)
   }
 
   const close = () => {
@@ -219,12 +206,12 @@ export function InterviewDialog({ job, onClose }: Props) {
   }
 
   const recording = recorder.status !== 'idle'
-  const canFinishEarly = !!interviewId && answered > 0 && !finished && !busy && !recording
+  const canFinishEarly = answered > 0 && !finished && !busy && !recording
 
   return (
     <Dialog
       open
-      onClose={recording || busy === 'uploading' || busy === 'finishing' ? undefined : close}
+      onClose={recording ? undefined : close}
       fullScreen={fullScreen}
       fullWidth
       maxWidth="sm"
@@ -248,14 +235,14 @@ export function InterviewDialog({ job, onClose }: Props) {
             </IconButton>
           </Tooltip>
         )}
-        <IconButton onClick={close} aria-label="Fechar simulação" disabled={busy === 'uploading' || busy === 'finishing'}>
+        <IconButton onClick={close} aria-label="Fechar simulação">
           <CloseRounded />
         </IconButton>
       </DialogTitle>
 
       <Alert severity="info" sx={{ borderRadius: 0, py: 0, '& .MuiAlert-message': { py: 1 } }}>
-        Responda cada pergunta gravando um áudio. Ao finalizar, as gravações são enviadas para análise. (Perguntas de um
-        roteiro provisório; o entrevistador com IA ainda está em desenvolvimento.)
+        Responda cada pergunta gravando um áudio. Ao responder todas, as gravações são salvas e enviadas para
+        análise, e o relatório aparece em Entrevistas.
       </Alert>
       <Divider />
 
@@ -276,7 +263,7 @@ export function InterviewDialog({ job, onClose }: Props) {
               </Box>
               {ttsSupported && (
                 <Tooltip title="Ouvir de novo">
-                  <IconButton size="small" onClick={() => speak(m.text)} aria-label="Ouvir esta pergunta de novo">
+                  <IconButton size="small" onClick={() => speak(m.text, m.audioUrl)} aria-label="Ouvir esta pergunta de novo">
                     <VolumeUpRounded sx={{ fontSize: 18 }} />
                   </IconButton>
                 </Tooltip>
@@ -296,26 +283,23 @@ export function InterviewDialog({ job, onClose }: Props) {
         )}
 
         {busy === 'starting' && <Progress text="Preparando a entrevista…" />}
-        {busy === 'uploading' && <Progress text="Salvando a sua resposta…" />}
         {busy === 'thinking' && <Progress text="O entrevistador está pensando…" />}
-        {busy === 'finishing' && <Progress text="Finalizando e enviando os áudios para análise…" />}
 
-        {finished && <FinishedNotice result={finished} />}
-
-        {error && (
-          <Alert
-            severity="error"
-            action={
-              startFailed ? (
-                <Button color="inherit" size="small" onClick={retryStart}>
-                  Tentar de novo
-                </Button>
-              ) : undefined
-            }
-          >
-            {error}
-          </Alert>
+        {busy === 'sending' && (
+          <Progress text="Salvando e enviando as respostas para análise… isso pode levar alguns minutos." />
         )}
+
+        {finished && busy !== 'sending' && (
+          <FinishedNotice
+            answered={answered}
+            report={report}
+            sendError={sendError}
+            onRetry={() => void submit()}
+            onOpenReport={() => report && navigate(`/entrevistas/${report.id}`)}
+          />
+        )}
+
+        {error && <Alert severity="error">{error}</Alert>}
         <div ref={endRef} />
       </Box>
 
@@ -323,14 +307,15 @@ export function InterviewDialog({ job, onClose }: Props) {
       <Box sx={{ p: 2 }}>
         {finished ? (
           <Stack direction="row" sx={{ gap: 1.5, justifyContent: 'flex-end' }}>
-            {finished.delivery === 'failed' && (
-              <Button startIcon={<ReplayRounded />} onClick={() => interviewId && finish(interviewId)} disabled={!!busy}>
-                Tentar enviar de novo
+            {report ? (
+              <Button variant="contained" startIcon={<AssessmentOutlined />} onClick={() => navigate(`/entrevistas/${report.id}`)}>
+                Ver relatório
+              </Button>
+            ) : (
+              <Button variant="contained" onClick={close}>
+                Fechar
               </Button>
             )}
-            <Button variant="contained" onClick={close} disabled={!!busy}>
-              Fechar
-            </Button>
           </Stack>
         ) : take && !recording ? (
           <Stack sx={{ gap: 1.5 }}>
@@ -343,7 +328,7 @@ export function InterviewDialog({ job, onClose }: Props) {
                 Regravar
               </Button>
               <Button variant="contained" startIcon={<SendRounded />} onClick={() => void sendAnswer()} disabled={!!busy}>
-                {busy === 'uploading' ? 'Enviando…' : 'Enviar resposta'}
+                Enviar resposta
               </Button>
             </Stack>
           </Stack>
@@ -397,8 +382,8 @@ export function InterviewDialog({ job, onClose }: Props) {
               </Button>
             ) : (
               canFinishEarly && (
-                <Tooltip title="Encerrar agora e enviar as respostas já gravadas">
-                  <Button startIcon={<FlagRounded />} onClick={() => interviewId && finish(interviewId)}>
+                <Tooltip title="Encerrar a simulação agora (a análise precisa de todas as respostas)">
+                  <Button startIcon={<FlagRounded />} onClick={finishEarly}>
                     Finalizar
                   </Button>
                 </Tooltip>
@@ -420,26 +405,52 @@ function Progress({ text }: { text: string }) {
   )
 }
 
-function FinishedNotice({ result }: { result: FinishedInterview }) {
-  const count = result.answers.length
-  const saved = `${count} ${count === 1 ? 'áudio salvo' : 'áudios salvos'}`
-  if (result.delivery === 'sent') {
+type FinishedNoticeProps = {
+  answered: number
+  report: InterviewReport | null
+  sendError: string | null
+  onRetry: () => void
+  onOpenReport: () => void
+}
+
+function FinishedNotice({ answered, report, sendError, onRetry, onOpenReport }: FinishedNoticeProps) {
+  if (report) {
     return (
-      <Alert icon={<CheckCircleRounded />} severity="success">
-        Entrevista finalizada: {saved} e enviados para análise.
+      <Alert
+        icon={<CheckCircleRounded />}
+        severity="success"
+        action={
+          <Button color="inherit" size="small" onClick={onOpenReport}>
+            Ver relatório
+          </Button>
+        }
+      >
+        Respostas salvas e avaliadas
+        {report.notaGeral !== null ? ` (nota geral ${report.notaGeral.toLocaleString('pt-BR')}/10)` : ''}.
       </Alert>
     )
   }
-  if (result.delivery === 'pending') {
+  if (sendError) {
+    return (
+      <Alert
+        severity="error"
+        action={
+          <Button color="inherit" size="small" startIcon={<ReplayRounded />} onClick={onRetry}>
+            Tentar de novo
+          </Button>
+        }
+      >
+        {sendError}
+      </Alert>
+    )
+  }
+  if (answered < QUESTIONS.length) {
     return (
       <Alert severity="info">
-        Entrevista finalizada: {saved}. O envio para análise acontece quando a integração com o n8n estiver pronta.
+        Entrevista finalizada com {answered} de {QUESTIONS.length} respostas. A análise só é feita com todas as
+        perguntas respondidas, então estas gravações não foram enviadas.
       </Alert>
     )
   }
-  return (
-    <Alert severity="warning">
-      Entrevista finalizada e {saved}, mas o envio para análise falhou. Tente enviar de novo.
-    </Alert>
-  )
+  return null
 }

@@ -1,8 +1,10 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { createReadStream, type ReadStream } from 'node:fs';
+import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { join, resolve } from 'node:path';
 import {
+  BadGatewayException,
   BadRequestException,
-  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -10,175 +12,133 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThanOrEqual, Repository } from 'typeorm';
 import { Job } from '../jobs/job.entity.js';
+import type { User } from '../users/user.entity.js';
 import { inspectAudio } from './audio-file.js';
-import type { Delivery, SaveAnswerDto } from './dto/interview.dto.js';
-import { Interview, InterviewAnswer, InterviewStatus } from './interview.entity.js';
+import { QUESTION_COUNT } from './dto/interview-report.dto.js';
+import { InterviewReport } from './interview-report.entity.js';
+
+export const DEFAULT_INTERVIEW_WEBHOOK_URL = 'http://localhost:5678/webhook-test/interview_training';
+
+export type AudioFiles = Partial<Record<string, Express.Multer.File[]>>;
+
+/** Campos multipart dos áudios, iguais aos que o fluxo do n8n lê (`$binary.pergunta1`...). */
+export const AUDIO_FIELDS = Array.from({ length: QUESTION_COUNT }, (_, i) => `pergunta${i + 1}`);
+
+const AUDIO_NAME = /^resposta-(\d+)(\.[a-z0-9]+)$/;
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.webm': 'audio/webm',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.wav': 'audio/wav',
+  '.mp3': 'audio/mpeg',
+};
 
 @Injectable()
 export class InterviewsService implements OnModuleInit {
   private readonly logger = new Logger(InterviewsService.name);
   private readonly audioDir: string;
+  private readonly webhookUrl: string;
+  private readonly webhookTimeoutMs: number;
 
   constructor(
-    @InjectRepository(Interview) private readonly interviews: Repository<Interview>,
-    @InjectRepository(InterviewAnswer) private readonly answers: Repository<InterviewAnswer>,
+    @InjectRepository(InterviewReport) private readonly reports: Repository<InterviewReport>,
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
-    private readonly config: ConfigService,
+    config: ConfigService,
   ) {
     this.audioDir = resolve(config.get('INTERVIEW_AUDIO_DIR', 'storage/entrevistas'));
+    this.webhookUrl = config.get('N8N_INTERVIEW_WEBHOOK_URL') || DEFAULT_INTERVIEW_WEBHOOK_URL;
+    this.webhookTimeoutMs = Number(config.get('N8N_INTERVIEW_WEBHOOK_TIMEOUT_MS')) || 180_000;
   }
 
   async onModuleInit() {
     await mkdir(this.audioDir, { recursive: true });
   }
 
-  async start(userId: string, jobId: string): Promise<Interview> {
-    if (!(await this.jobs.existsBy({ id: jobId, userId }))) throw new NotFoundException('Vaga não encontrada.');
-    const interview = await this.interviews.save(this.interviews.create({ userId, jobId }));
-    interview.answers = [];
-    return interview;
+  list(userId: string): Promise<InterviewReport[]> {
+    return this.reports.find({ where: { userId }, relations: { job: true }, order: { createdAt: 'DESC' } });
   }
 
-  async findOne(userId: string, id: string): Promise<Interview> {
-    const interview = await this.interviews.findOne({ where: { id, userId }, relations: { answers: true } });
-    if (!interview) throw new NotFoundException('Entrevista não encontrada.');
-    return interview;
+  async findOne(userId: string, id: string): Promise<InterviewReport> {
+    const report = await this.reports.findOne({ where: { id, userId }, relations: { job: true } });
+    if (!report) throw new NotFoundException('Relatório de entrevista não encontrado.');
+    return report;
   }
 
-  /** Grava o áudio em <userId>/<interviewId>/<NN>.<ext>; regravar a mesma pergunta substitui o arquivo. */
-  async saveAnswer(
-    userId: string,
-    id: string,
-    dto: SaveAnswerDto,
-    file: Express.Multer.File | undefined,
-  ): Promise<InterviewAnswer> {
-    if (!file) throw new BadRequestException('Envie o áudio no campo "file".');
-    const audio = inspectAudio(file.buffer);
-    if (typeof audio === 'string') throw new BadRequestException(audio);
+  /** Perguntas que têm áudio salvo em <userId>/<relatórioId>/. */
+  async savedAudios(report: InterviewReport): Promise<Set<number>> {
+    return new Set((await this.audioFiles(report)).keys());
+  }
 
-    const interview = await this.findOne(userId, id);
-    if (interview.status !== InterviewStatus.InProgress) {
-      throw new ConflictException('A entrevista já foi finalizada.');
-    }
-
-    const storageKey = `${userId}/${id}/${String(dto.questionIndex).padStart(2, '0')}${audio.extension}`;
-    const path = join(this.audioDir, storageKey);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, file.buffer);
-
-    const previous = interview.answers?.find((a) => a.questionIndex === dto.questionIndex);
-    if (previous && previous.storageKey !== storageKey) await this.deleteFile(previous.storageKey);
-
-    await this.answers.upsert(
-      {
-        interviewId: id,
-        questionIndex: dto.questionIndex,
-        question: dto.question,
-        storageKey,
-        mimeType: audio.mimeType,
-        sizeBytes: file.size,
-        durationMs: dto.durationMs,
-      },
-      ['interviewId', 'questionIndex'],
-    );
-    return this.answers.findOneByOrFail({ interviewId: id, questionIndex: dto.questionIndex });
+  async openAudio(userId: string, id: string, question: number): Promise<{ stream: ReadStream; mimeType: string }> {
+    const report = await this.findOne(userId, id);
+    const file = (await this.audioFiles(report)).get(question);
+    if (!file) throw new NotFoundException('Áudio não encontrado.');
+    const ext = file.slice(file.lastIndexOf('.'));
+    return {
+      stream: createReadStream(join(this.folder(report.userId, report.id), file)),
+      mimeType: MIME_BY_EXT[ext] ?? 'application/octet-stream',
+    };
   }
 
   /**
-   * Encerra a entrevista e envia os áudios ao n8n. Pode ser chamado de novo para
-   * reenviar enquanto o status não for "sent".
+   * Salva os 4 áudios e os envia ao webhook "interview_training" do n8n (multipart/form-data):
+   * - campos: cargo, requisitos, nome, email, user_id (+ empresa, job_id)
+   * - arquivos: pergunta1..pergunta4
+   * O n8n avalia com o Gemini, grava a linha em "interviews" e responde com ela; a pasta dos
+   * áudios passa a se chamar como o id do relatório. Se algo falhar, os áudios salvos são apagados
+   * (continuam no navegador para tentar de novo).
    */
-  async finish(userId: string, id: string): Promise<{ interview: Interview; delivery: Delivery }> {
-    const interview = await this.findOne(userId, id);
-    if (interview.status === InterviewStatus.Sent) return { interview, delivery: 'sent' };
-    if (!interview.answers?.length) {
-      throw new BadRequestException('Grave pelo menos uma resposta antes de finalizar.');
-    }
-    if (interview.status === InterviewStatus.InProgress) {
-      interview.status = InterviewStatus.Finished;
-      interview.finishedAt = new Date();
-      await this.interviews.save(interview);
-    }
+  async submit(user: User, jobId: string, files: AudioFiles): Promise<InterviewReport> {
+    const audios = AUDIO_FIELDS.map((field, i) => {
+      const file = files[field]?.[0];
+      if (!file) throw new BadRequestException(`Envie o áudio da pergunta ${i + 1} no campo "${field}".`);
+      const audio = inspectAudio(file.buffer);
+      if (typeof audio === 'string') throw new BadRequestException(`Pergunta ${i + 1}: ${audio}`);
+      return { field, n: i + 1, buffer: file.buffer, ...audio };
+    });
 
-    const delivery = await this.sendToN8n(interview);
-    if (delivery === 'sent') {
-      interview.status = InterviewStatus.Sent;
-      interview.sentAt = new Date();
-      await this.interviews.save(interview);
-    }
-    return { interview, delivery };
-  }
+    const job = await this.jobs.findOneBy({ id: jobId, userId: user.id });
+    if (!job) throw new NotFoundException('Vaga não encontrada.');
 
-  /**
-   * Envia multipart/form-data ao webhook do n8n:
-   * - campos: interviewId, userId, jobId, finishedAt, job (JSON) e answers (JSON com a pergunta de cada áudio)
-   * - arquivos: audio_0, audio_1... (no n8n aparecem em `$binary.audio_0`...)
-   * Sem N8N_INTERVIEW_WEBHOOK_URL configurada, nada é enviado (delivery "pending").
-   */
-  private async sendToN8n(interview: Interview): Promise<Delivery> {
-    const url = this.config.get<string>('N8N_INTERVIEW_WEBHOOK_URL');
-    if (!url) {
-      this.logger.warn(`N8N_INTERVIEW_WEBHOOK_URL não configurada; entrevista ${interview.id} aguardando envio.`);
-      return 'pending';
-    }
-
-    const job = await this.jobs.findOneBy({ id: interview.jobId });
-    const answers = [...(interview.answers ?? [])].sort((a, b) => a.questionIndex - b.questionIndex);
-    const form = new FormData();
-    form.append('interviewId', interview.id);
-    form.append('userId', interview.userId);
-    form.append('jobId', interview.jobId);
-    form.append('finishedAt', (interview.finishedAt ?? new Date()).toISOString());
-    form.append(
-      'job',
-      JSON.stringify(
-        job && {
-          company: job.company,
-          role: job.role,
-          location: job.location,
-          workMode: job.workMode,
-          tags: job.tags,
-          link: job.link,
-        },
-      ),
-    );
-    form.append(
-      'answers',
-      JSON.stringify(
-        answers.map((a, i) => ({
-          field: `audio_${i}`,
-          questionIndex: a.questionIndex,
-          question: a.question,
-          durationMs: a.durationMs,
-          mimeType: a.mimeType,
-        })),
-      ),
-    );
+    const tempFolder = this.folder(user.id, `envio-${randomUUID()}`);
+    await mkdir(tempFolder, { recursive: true });
+    await Promise.all(audios.map((a) => writeFile(join(tempFolder, `resposta-${a.n}${a.extension}`), a.buffer)));
 
     try {
-      for (const [i, a] of answers.entries()) {
-        const buffer = await readFile(join(this.audioDir, a.storageKey));
-        const name = `pergunta-${String(a.questionIndex + 1).padStart(2, '0')}${a.storageKey.slice(a.storageKey.lastIndexOf('.'))}`;
-        form.append(`audio_${i}`, new Blob([new Uint8Array(buffer)], { type: a.mimeType }), name);
+      const form = new FormData();
+      form.append('cargo', job.role);
+      form.append('requisitos', job.tags.join(', '));
+      form.append('nome', user.username);
+      form.append('email', user.email);
+      form.append('user_id', user.id);
+      form.append('empresa', job.company);
+      form.append('job_id', job.id);
+      for (const a of audios) {
+        form.append(a.field, new Blob([new Uint8Array(a.buffer)], { type: a.mimeType }), `Resposta${a.n}${a.extension}`);
       }
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { Accept: 'application/json' },
-        body: form,
-        signal: AbortSignal.timeout(Number(this.config.get('N8N_INTERVIEW_WEBHOOK_TIMEOUT_MS')) || 120_000),
-      });
-      if (!response.ok) {
-        this.logger.error(`Webhook de entrevista respondeu ${response.status}: ${(await response.text()).slice(0, 500)}`);
-        return 'failed';
-      }
-      return 'sent';
+      const startedAt = new Date(Date.now() - 5_000);
+      const body = await this.postToN8n(form);
+      const report = await this.findCreatedReport(user.id, body, startedAt);
+
+      await rename(tempFolder, this.folder(user.id, report.id));
+      await this.reports.update({ id: report.id }, { jobId: job.id });
+      return this.findOne(user.id, report.id);
     } catch (error) {
-      this.logger.error(`Falha ao enviar a entrevista ${interview.id} ao n8n (${url}): ${String(error)}`);
-      return 'failed';
+      await rm(tempFolder, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
     }
+  }
+
+  async remove(userId: string, id: string): Promise<void> {
+    const report = await this.findOne(userId, id);
+    await this.reports.delete({ id: report.id, userId });
+    await rm(this.folder(userId, report.id), { recursive: true, force: true }).catch((error: unknown) =>
+      this.logger.warn(`Não foi possível apagar os áudios da entrevista ${report.id}: ${String(error)}`),
+    );
   }
 
   /** Apaga os áudios do usuário (usado ao excluir a conta). */
@@ -188,9 +148,56 @@ export class InterviewsService implements OnModuleInit {
     );
   }
 
-  private async deleteFile(storageKey: string): Promise<void> {
-    await rm(join(this.audioDir, storageKey), { force: true }).catch((error: unknown) =>
-      this.logger.warn(`Não foi possível apagar ${storageKey}: ${String(error)}`),
-    );
+  private async postToN8n(form: FormData): Promise<unknown> {
+    let response: Response;
+    try {
+      response = await fetch(this.webhookUrl, {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        body: form,
+        signal: AbortSignal.timeout(this.webhookTimeoutMs),
+      });
+    } catch (error) {
+      this.logger.error(`Falha ao contatar o webhook de entrevista (${this.webhookUrl}): ${String(error)}`);
+      throw new BadGatewayException('Não foi possível enviar as respostas para análise. Tente novamente.');
+    }
+    const text = await response.text();
+    if (!response.ok) {
+      this.logger.error(`Webhook de entrevista respondeu ${response.status}: ${text.slice(0, 500)}`);
+      throw new BadGatewayException('O serviço de análise de entrevistas retornou um erro.');
+    }
+    try {
+      return text ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** O n8n responde com a linha inserida; se não vier o id, pega a mais recente criada durante o envio. */
+  private async findCreatedReport(userId: string, body: unknown, since: Date): Promise<InterviewReport> {
+    const row = (Array.isArray(body) ? body[0] : body) as { id?: unknown } | null;
+    const id = typeof row?.id === 'string' ? row.id : null;
+    const report = id
+      ? await this.reports.findOneBy({ id, userId })
+      : await this.reports.findOne({ where: { userId, createdAt: MoreThanOrEqual(since) }, order: { createdAt: 'DESC' } });
+    if (!report) {
+      this.logger.error(`Webhook de entrevista respondeu sem um relatório do usuário ${userId}: ${JSON.stringify(body)?.slice(0, 300)}`);
+      throw new BadGatewayException('A análise terminou, mas o relatório não foi encontrado.');
+    }
+    return report;
+  }
+
+  private folder(userId: string, name: string): string {
+    return join(this.audioDir, userId, name);
+  }
+
+  private async audioFiles(report: InterviewReport): Promise<Map<number, string>> {
+    const names = await readdir(this.folder(report.userId, report.id)).catch(() => [] as string[]);
+    const files = new Map<number, string>();
+    for (const name of names) {
+      const match = AUDIO_NAME.exec(name);
+      if (match) files.set(Number(match[1]), name);
+    }
+    return files;
   }
 }
