@@ -25,13 +25,37 @@ export type InterviewReportSummary = {
   createdAt: string
 }
 
+/** Entrevista técnica gerada pelo n8n a partir do relatório (tabela technical_interview). */
+export type TechnicalInterview = {
+  id: string
+  cargo: string | null
+  perguntas: string[]
+  status: string
+  createdAt: string
+}
+
 export type InterviewReport = InterviewReportSummary & {
   candidatoNome: string | null
   recomendacao: string | null
   respostas: InterviewAnswer[]
+  /** Entrevista técnica mais recente deste relatório, se já foi gerada. */
+  technical: TechnicalInterview | null
+}
+
+/** Resposta do fluxo "Technical Interview" do n8n (campos opcionais: vêm como o n8n mandar). */
+export type TechnicalInterviewResult = {
+  sucesso?: boolean
+  interview_id?: string
+  cargo?: string
+  nivel?: string
+  perguntas?: ({ pergunta?: string } & Record<string, unknown>)[]
 }
 
 export const interviewsApi = {
+  /** Gera a entrevista técnica do relatório; `descricao` é o texto digitado na modal. */
+  requestTechnical: (id: string, descricao: string) =>
+    api<TechnicalInterviewResult>(`/interviews/${id}/technical`, { method: 'POST', json: { descricao } }),
+
   list: () => api<InterviewReportSummary[]>('/interviews'),
 
   get: (id: string) => api<InterviewReport>(`/interviews/${id}`),

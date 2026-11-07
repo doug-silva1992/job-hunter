@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, MoreThanOrEqual, Not, Repository } from 'typeorm';
+import { MoreThanOrEqual, Repository } from 'typeorm';
 import { Job } from '../jobs/job.entity.js';
 import type { User } from '../users/user.entity.js';
 import { inspectAudio } from './audio-file.js';
@@ -80,12 +80,9 @@ export class InterviewsService implements OnModuleInit {
     return report;
   }
 
-  /** Entrevista técnica mais recente (com perguntas) gerada a partir do relatório, se houver. */
+  /** Entrevista técnica mais recente do relatório (select em technical_interview por interview_id), se houver. */
   findTechnical(userId: string, interviewId: string): Promise<TechnicalInterview | null> {
-    return this.technicals.findOne({
-      where: { userId, interviewId, pergunta1: Not(IsNull()) },
-      order: { createdAt: 'DESC' },
-    });
+    return this.technicals.findOne({ where: { userId, interviewId }, order: { createdAt: 'DESC' } });
   }
 
   /** Perguntas que têm áudio salvo em <userId>/<relatórioId>/. */

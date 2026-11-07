@@ -17,7 +17,7 @@ import { ApiError } from '../api/client'
 import { interviewsApi, type InterviewReportSummary } from '../api/interviews'
 import { CompanyAvatar } from '../components/CompanyAvatar'
 import { ScoreBadge } from '../components/ScoreBadge'
-import { formatDateTime, formatScore } from '../interview/reportFormat'
+import { formatDateTime, formatScore, SCORE_BANDS } from '../interview/reportFormat'
 
 export function StatusChip({ status }: { status: string | null }) {
   const done = status === 'concluida'
@@ -96,6 +96,8 @@ export function InterviewsPage() {
         </Stack>
       )}
 
+      <ScoreGuide />
+
       <Card component="section" aria-label="Relatórios de entrevista">
         {loading && reports.length === 0 ? (
           <Stack sx={{ p: 5, alignItems: 'center' }}>
@@ -155,6 +157,35 @@ export function InterviewsPage() {
         )}
       </Card>
     </>
+  )
+}
+
+/** Como interpretar a nota geral da simulação. */
+function ScoreGuide() {
+  return (
+    <Card component="section" aria-labelledby="score-guide-title" sx={{ p: { xs: 2, sm: 2.5 } }}>
+      <Typography id="score-guide-title" variant="subtitle2" component="h2" sx={{ mb: 1.5 }}>
+        Como interpretar a nota
+      </Typography>
+      <Box
+        component="ul"
+        sx={{ m: 0, p: 0, listStyle: 'none', display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' } }}
+      >
+        {SCORE_BANDS.map((b) => (
+          <Box component="li" key={b.range} sx={{ display: 'flex', gap: 1.25, alignItems: 'flex-start' }}>
+            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: b.color, mt: 0.6, flexShrink: 0 }} />
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {b.range}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {b.text}
+              </Typography>
+            </Box>
+          </Box>
+        ))}
+      </Box>
+    </Card>
   )
 }
 

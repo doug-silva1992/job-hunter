@@ -130,7 +130,7 @@ export class InterviewReportDto extends InterviewReportSummaryDto {
   @ApiProperty({
     type: TechnicalInterviewDto,
     nullable: true,
-    description: 'Entrevista técnica mais recente gerada a partir deste relatório, com perguntas.',
+    description: 'Entrevista técnica mais recente deste relatório (technical_interview.interview_id), ou null.',
   })
   technical: TechnicalInterviewDto | null;
 

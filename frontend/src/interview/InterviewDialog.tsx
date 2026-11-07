@@ -27,7 +27,7 @@ import { ApiError } from '../api/client'
 import { interviewsApi, type InterviewReport } from '../api/interviews'
 import type { Job } from '../api/jobs'
 import { CompanyAvatar } from '../components/CompanyAvatar'
-import { closingTurn, interviewer, QUESTIONS, type InterviewMessage } from './interviewer'
+import { CLOSING_AUDIO, closingTurn, QUESTIONS, scriptedInterviewer, type InterviewMessage } from './interviewer'
 import { formatDuration, useAudioRecorder, type Take } from './recorder'
 import { useSpeechSynthesis } from './speech'
 
@@ -51,15 +51,32 @@ const pulse = keyframes`
 const toHistory = (messages: Message[]): InterviewMessage[] =>
   messages.map((m) => (m.role === 'interviewer' ? { role: m.role, text: m.text } : { role: m.role, text: AUDIO_ANSWER }))
 
-type Props = { job: Job; onClose: () => void }
+/** Roteiro da entrevista técnica (tabela technical_interview). As perguntas são lidas pela voz do navegador. */
+export type TechnicalScript = { questions: string[]; company: string; role: string }
+
+type Props = { onClose: () => void } & (
+  | { job: Job; technical?: undefined }
+  | { job?: undefined; technical: TechnicalScript }
+)
 
 /**
- * Simulação de entrevista: o entrevistador pergunta (em voz alta) e o candidato grava a resposta.
- * Ao responder todas as perguntas, os áudios são salvos no backend e enviados ao n8n, que avalia e
- * grava o relatório (tela Entrevistas).
+ * Chat de entrevista: o entrevistador pergunta (em voz alta) e o candidato grava a resposta.
+ * - Simulação (`job`): perguntas com áudio gravado; ao responder todas, os áudios são salvos no
+ *   backend e enviados ao n8n, que avalia e grava o relatório (tela Entrevistas).
+ * - Técnica (`technical`): perguntas geradas pelo n8n, lidas pela voz do navegador; as gravações
+ *   ficam só nesta janela.
  * Montar só quando aberta: o estado zera a cada abertura.
  */
-export function InterviewDialog({ job, onClose }: Props) {
+export function InterviewDialog({ job, technical, onClose }: Props) {
+  const isTechnical = !!technical
+  const company = technical?.company ?? job?.company ?? ''
+  const role = technical?.role ?? job?.role ?? ''
+  // criado uma vez por abertura (a prop pode mudar de identidade a cada render da página)
+  const [ask] = useState(() =>
+    technical ? scriptedInterviewer(technical.questions.map((text) => ({ text }))) : scriptedInterviewer(QUESTIONS, CLOSING_AUDIO),
+  )
+  const [totalQuestions] = useState(() => (technical ? technical.questions.length : QUESTIONS.length))
+
   const theme = useTheme()
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'))
 
@@ -110,6 +127,7 @@ export function InterviewDialog({ job, onClose }: Props) {
 
   /** Salva e envia os áudios para avaliação; só com todas as perguntas respondidas. */
   const submit = useCallback(async () => {
+    if (!job) return
     const session = sessionRef.current
     setBusy('sending')
     setSendError(null)
@@ -122,12 +140,12 @@ export function InterviewDialog({ job, onClose }: Props) {
     } finally {
       if (session === sessionRef.current) setBusy(null)
     }
-  }, [job.id])
+  }, [job])
 
   const begin = useCallback(async () => {
     const session = sessionRef.current
     try {
-      const turn = await interviewer(job, [])
+      const turn = await ask([])
       if (session !== sessionRef.current) return
       say(turn.message, turn.audioUrl)
     } catch {
@@ -135,7 +153,7 @@ export function InterviewDialog({ job, onClose }: Props) {
     } finally {
       if (session === sessionRef.current) setBusy(null)
     }
-  }, [job, say])
+  }, [ask, say])
 
   useEffect(() => {
     const session = sessionRef // contador, não um nó do DOM
@@ -164,12 +182,12 @@ export function InterviewDialog({ job, onClose }: Props) {
     setBusy('thinking')
 
     try {
-      const turn = await interviewer(job, toHistory(next))
+      const turn = await ask(toHistory(next))
       if (session !== sessionRef.current) return
       say(turn.message, turn.audioUrl)
       if (turn.done) {
         setFinished(true)
-        if (answersRef.current.length >= QUESTIONS.length) return void (await submit())
+        if (!isTechnical && answersRef.current.length >= totalQuestions) return void (await submit())
       }
     } catch {
       if (session === sessionRef.current) setError('O entrevistador não respondeu. Tente finalizar a entrevista.')
@@ -189,7 +207,7 @@ export function InterviewDialog({ job, onClose }: Props) {
   }
 
   const finishEarly = () => {
-    const turn = closingTurn(toHistory(messages))
+    const turn = closingTurn(toHistory(messages), isTechnical ? undefined : CLOSING_AUDIO)
     say(turn.message, turn.audioUrl)
     setFinished(true)
   }
@@ -219,13 +237,13 @@ export function InterviewDialog({ job, onClose }: Props) {
       slotProps={{ paper: { sx: { height: fullScreen ? '100%' : 'min(720px, calc(100% - 64px))' } } }}
     >
       <DialogTitle id="interview-title" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pr: 1.5 }}>
-        <CompanyAvatar name={job.company} size={40} />
+        <CompanyAvatar name={company || role} size={40} />
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography variant="subtitle1" component="span" sx={{ display: 'block', fontWeight: 600 }}>
-            Simulação de entrevista
+            {isTechnical ? 'Entrevista técnica' : 'Simulação de entrevista'}
           </Typography>
           <Typography variant="body2" color="text.secondary" noWrap component="span" sx={{ display: 'block' }}>
-            {job.role} · {job.company}
+            {[role, company].filter(Boolean).join(' · ')}
           </Typography>
         </Box>
         {ttsSupported && (
@@ -241,8 +259,9 @@ export function InterviewDialog({ job, onClose }: Props) {
       </DialogTitle>
 
       <Alert severity="info" sx={{ borderRadius: 0, py: 0, '& .MuiAlert-message': { py: 1 } }}>
-        Responda cada pergunta gravando um áudio. Ao responder todas, as gravações são salvas e enviadas para
-        análise, e o relatório aparece em Entrevistas.
+        {isTechnical
+          ? `São ${totalQuestions} perguntas técnicas, lidas pela voz do navegador. Responda cada uma gravando um áudio; as gravações ficam só nesta janela.`
+          : 'Responda cada pergunta gravando um áudio. Ao responder todas, as gravações são salvas e enviadas para análise, e o relatório aparece em Entrevistas.'}
       </Alert>
       <Divider />
 
@@ -291,6 +310,8 @@ export function InterviewDialog({ job, onClose }: Props) {
 
         {finished && busy !== 'sending' && (
           <FinishedNotice
+            technical={isTechnical}
+            total={totalQuestions}
             answered={answered}
             report={report}
             sendError={sendError}
@@ -382,7 +403,7 @@ export function InterviewDialog({ job, onClose }: Props) {
               </Button>
             ) : (
               canFinishEarly && (
-                <Tooltip title="Encerrar a simulação agora (a análise precisa de todas as respostas)">
+                <Tooltip title={isTechnical ? 'Encerrar a entrevista agora' : 'Encerrar a simulação agora (a análise precisa de todas as respostas)'}>
                   <Button startIcon={<FlagRounded />} onClick={finishEarly}>
                     Finalizar
                   </Button>
@@ -406,6 +427,8 @@ function Progress({ text }: { text: string }) {
 }
 
 type FinishedNoticeProps = {
+  technical: boolean
+  total: number
   answered: number
   report: InterviewReport | null
   sendError: string | null
@@ -413,7 +436,14 @@ type FinishedNoticeProps = {
   onOpenReport: () => void
 }
 
-function FinishedNotice({ answered, report, sendError, onRetry, onOpenReport }: FinishedNoticeProps) {
+function FinishedNotice({ technical, total, answered, report, sendError, onRetry, onOpenReport }: FinishedNoticeProps) {
+  if (technical) {
+    return (
+      <Alert icon={<CheckCircleRounded />} severity="success">
+        Entrevista técnica finalizada com {answered} de {total} respostas. Ouça as suas respostas acima antes de fechar.
+      </Alert>
+    )
+  }
   if (report) {
     return (
       <Alert
@@ -444,10 +474,10 @@ function FinishedNotice({ answered, report, sendError, onRetry, onOpenReport }: 
       </Alert>
     )
   }
-  if (answered < QUESTIONS.length) {
+  if (answered < total) {
     return (
       <Alert severity="info">
-        Entrevista finalizada com {answered} de {QUESTIONS.length} respostas. A análise só é feita com todas as
+        Entrevista finalizada com {answered} de {total} respostas. A análise só é feita com todas as
         perguntas respondidas, então estas gravações não foram enviadas.
       </Alert>
     )
