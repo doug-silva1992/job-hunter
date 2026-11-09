@@ -12,6 +12,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
+import type { JobAtsResult } from '../api/jobs'
 import type { AtsResult } from '../api/resumes'
 
 type Props = {
@@ -52,8 +53,31 @@ function Score({ value }: { value: number }) {
   )
 }
 
-function Section({ title, icon, color, items }: { title: string; icon: ReactNode; color: string; items?: string[] }) {
-  if (!items?.length) return null
+/** O JSON vem do n8n: só aceita listas de textos não vazios. */
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.trim() !== '') : []
+}
+
+function Chips({ title, items, color }: { title: string; items: unknown; color?: 'success' | 'warning' }) {
+  const list = strings(items)
+  if (!list.length) return null
+  return (
+    <Box component="section">
+      <Typography variant="subtitle2" component="h3" sx={{ mb: 1 }}>
+        {title}
+      </Typography>
+      <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+        {list.map((t) => (
+          <Chip key={t} label={t} size="small" variant="outlined" color={color} />
+        ))}
+      </Stack>
+    </Box>
+  )
+}
+
+function Section({ title, icon, color, items: raw }: { title: string; icon: ReactNode; color: string; items?: unknown }) {
+  const items = strings(raw)
+  if (!items.length) return null
   return (
     <Box component="section">
       <Stack direction="row" sx={{ alignItems: 'center', gap: 1, mb: 1, color }}>
@@ -73,6 +97,60 @@ function Section({ title, icon, color, items }: { title: string; icon: ReactNode
   )
 }
 
+/** Nota, classificação e listas de uma análise de ATS (do currículo ou da vaga x currículo). */
+export function AtsReport({
+  ats,
+  scoreLabel = 'Compatibilidade com ATS',
+}: {
+  ats: AtsResult & JobAtsResult
+  scoreLabel?: string
+}) {
+  const score = typeof ats.atsScore === 'number' ? ats.atsScore : null
+  const classificacao = typeof ats.classificacao === 'string' ? ats.classificacao : null
+  const resumo = typeof ats.resumo === 'string' ? ats.resumo : null
+  return (
+    <Stack sx={{ gap: 3 }}>
+      {(score !== null || classificacao) && (
+        <Stack direction="row" sx={{ alignItems: 'center', gap: 2.5 }}>
+          {score !== null && <Score value={score} />}
+          <Box>
+            <Typography variant="overline" color="text.secondary">
+              {scoreLabel}
+            </Typography>
+            {classificacao && <Typography variant="subtitle1">{classificacao}</Typography>}
+          </Box>
+        </Stack>
+      )}
+
+      {resumo && <Typography variant="body2">{resumo}</Typography>}
+
+      <Chips title="Palavras-chave da vaga no currículo" items={ats.palavrasChaveEncontradas} color="success" />
+      <Chips title="Palavras-chave da vaga ausentes no currículo" items={ats.palavrasChaveFaltando} color="warning" />
+
+      <Section
+        title="Pontos fortes"
+        icon={<CheckCircleOutlineRounded fontSize="small" />}
+        color="success.main"
+        items={ats.pontosFortes}
+      />
+      <Section
+        title="Pontos fracos"
+        icon={<ReportProblemOutlined fontSize="small" />}
+        color="warning.main"
+        items={ats.pontosFracos}
+      />
+      <Section
+        title="Sugestões"
+        icon={<LightbulbOutlined fontSize="small" />}
+        color="primary.main"
+        items={ats.sugestoes}
+      />
+
+      <Chips title="Tecnologias identificadas" items={ats.tecnologiasIdentificadas} />
+    </Stack>
+  )
+}
+
 export function AtsDialog({ open, fileName, ats, onClose }: Props) {
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
@@ -86,51 +164,7 @@ export function AtsDialog({ open, fileName, ats, onClose }: Props) {
             Este currículo ainda não foi avaliado.
           </Typography>
         ) : (
-          <Stack sx={{ gap: 3 }}>
-            {(typeof ats.atsScore === 'number' || ats.classificacao) && (
-              <Stack direction="row" sx={{ alignItems: 'center', gap: 2.5 }}>
-                {typeof ats.atsScore === 'number' && <Score value={ats.atsScore} />}
-                <Box>
-                  <Typography variant="overline" color="text.secondary">
-                    Compatibilidade com ATS
-                  </Typography>
-                  {ats.classificacao && <Typography variant="subtitle1">{ats.classificacao}</Typography>}
-                </Box>
-              </Stack>
-            )}
-
-            <Section
-              title="Pontos fortes"
-              icon={<CheckCircleOutlineRounded fontSize="small" />}
-              color="success.main"
-              items={ats.pontosFortes}
-            />
-            <Section
-              title="Pontos fracos"
-              icon={<ReportProblemOutlined fontSize="small" />}
-              color="warning.main"
-              items={ats.pontosFracos}
-            />
-            <Section
-              title="Sugestões"
-              icon={<LightbulbOutlined fontSize="small" />}
-              color="primary.main"
-              items={ats.sugestoes}
-            />
-
-            {!!ats.tecnologiasIdentificadas?.length && (
-              <Box component="section">
-                <Typography variant="subtitle2" component="h3" sx={{ mb: 1 }}>
-                  Tecnologias identificadas
-                </Typography>
-                <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.75 }}>
-                  {ats.tecnologiasIdentificadas.map((t) => (
-                    <Chip key={t} label={t} size="small" variant="outlined" />
-                  ))}
-                </Stack>
-              </Box>
-            )}
-          </Stack>
+          <AtsReport ats={ats} />
         )}
       </DialogContent>
       <DialogActions>

@@ -9,6 +9,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Resume } from '../resumes/resume.entity.js';
 import { User } from '../users/user.entity.js';
 
 export enum WorkMode {
@@ -67,6 +68,22 @@ export class Job {
   /** Página da vaga no site de origem (Gupy, Remotive...). */
   @Column({ type: 'text', nullable: true })
   link: string | null;
+
+  /** Descrição completa da vaga (preenchida no cadastro manual). */
+  @Column({ type: 'text', nullable: true })
+  description: string | null;
+
+  /** Currículo comparado com a vaga na análise de ATS. */
+  @Column({ name: 'resume_id', type: 'uuid', nullable: true })
+  resumeId: string | null;
+
+  @ManyToOne(() => Resume, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'resume_id', foreignKeyConstraintName: 'FK_jobs_resume' })
+  resume?: Resume | null;
+
+  /** Resultado da análise de ATS (vaga x currículo) devolvido pelo n8n. */
+  @Column({ type: 'jsonb', nullable: true })
+  ats: Record<string, unknown> | null;
 
   @Column({ name: 'posted_at', type: 'timestamptz', nullable: true })
   postedAt: Date | null;

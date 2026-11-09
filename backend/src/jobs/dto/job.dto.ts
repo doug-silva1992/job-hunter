@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -80,6 +80,37 @@ export class CreateJobDto {
 
 export class UpdateJobDto extends PartialType(CreateJobDto) {}
 
+/**
+ * Corpo do POST /jobs/manual: vaga cadastrada pelo usuário. A aderência não é informada,
+ * ela vem da análise de ATS (vaga x currículo) feita pelo n8n.
+ */
+export class CreateManualJobDto extends OmitType(CreateJobDto, ['match', 'location'] as const) {
+  @ApiPropertyOptional({ example: 'São Paulo, SP', maxLength: 120, default: '' })
+  @IsOptional()
+  @Transform(({ value }) => trim(value))
+  @IsString()
+  @MaxLength(120)
+  location?: string;
+
+  @ApiProperty({ minLength: 30, maxLength: 20000, description: 'Descrição completa da vaga (requisitos, atividades...).' })
+  @Transform(({ value }) => trim(value))
+  @IsString()
+  @Length(30, 20000, { message: 'A descrição da vaga deve ter entre 30 e 20000 caracteres.' })
+  description: string;
+
+  @ApiProperty({ format: 'uuid', description: 'Currículo comparado com a vaga.' })
+  @IsUUID()
+  resumeId: string;
+}
+
+/** Corpo do POST /jobs/:id/ats (refazer a análise, opcionalmente com outro currículo). */
+export class AnalyzeJobDto {
+  @ApiPropertyOptional({ format: 'uuid', description: 'Outro currículo; se omitido, usa o da última análise.' })
+  @IsOptional()
+  @IsUUID()
+  resumeId?: string;
+}
+
 /** Corpo do PATCH /jobs/:id/stage (mover no Pipeline de candidaturas). */
 export class UpdateJobStageDto {
   @ApiProperty({ enum: JobStage, enumName: 'JobStage', example: JobStage.Applied })
@@ -127,6 +158,26 @@ export class JobResponseDto {
   @ApiProperty({ enum: JobStage, enumName: 'JobStage' }) stage: JobStage;
   @ApiProperty({ nullable: true, type: String, description: 'Página da vaga.' }) link: string | null;
   @ApiProperty({ nullable: true, type: Date }) postedAt: Date | null;
+  @ApiProperty({ nullable: true, type: String, description: 'Descrição da vaga.' }) description: string | null;
+  @ApiProperty({ nullable: true, type: String, format: 'uuid', description: 'Currículo comparado na análise de ATS.' })
+  resumeId: string | null;
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    description: 'Análise de ATS da vaga x currículo feita pelo n8n, ou null se ainda não analisada.',
+    example: {
+      atsScore: 82,
+      classificacao: 'Compatível',
+      resumo: '...',
+      pontosFortes: ['...'],
+      pontosFracos: ['...'],
+      sugestoes: ['...'],
+      palavrasChaveEncontradas: ['React'],
+      palavrasChaveFaltando: ['GraphQL'],
+    },
+  })
+  ats: Record<string, unknown> | null;
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;
 
@@ -142,10 +193,24 @@ export class JobResponseDto {
       stage: job.stage,
       link: job.link,
       postedAt: job.postedAt,
+      description: job.description,
+      resumeId: job.resumeId,
+      ats: job.ats,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
     };
   }
+}
+
+/** Resposta do POST /jobs/manual: a vaga é salva mesmo se a análise de ATS falhar. */
+export class ManualJobResponseDto {
+  @ApiProperty({ type: JobResponseDto }) job: JobResponseDto;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Motivo da falha na análise de ATS (a vaga foi salva; tente de novo em POST /jobs/:id/ats).',
+  })
+  atsError: string | null;
 }
 
 /** Números dos cards do Dashboard. */

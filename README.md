@@ -26,6 +26,26 @@ Job Hunter é uma plataforma que utiliza IA para encontrar, analisar e classific
 | Configurações | preferências de busca (compatibilidade mínima, palavras-chave, senioridade, modalidade, local, salário, frequência) e notificações via `/api/settings`; perfil, senha e exclusão da conta via `/api/users/me` |
 | Dashboard   | ainda usa dados simulados (vagas, métricas e kanban)                     |
 
+### Vagas cadastradas manualmente (ATS da vaga x currículo)
+
+Em **Vagas → Adicionar vaga** o usuário informa empresa, cargo, modalidade, link, tecnologias, a descrição completa e o currículo a comparar. O backend salva a vaga e envia ao webhook `N8N_JOB_ATS_WEBHOOK_URL` um JSON:
+
+```json
+{ "user_id": "...", "job_id": "...", "resume_id": "...", "fileName": "/curriculos/<userId>/<arquivo>",
+  "empresa": "...", "cargo": "...", "local": "...", "modalidade": "remote", "tags": ["React"],
+  "link": null, "descricao": "..." }
+```
+
+O fluxo deve responder com a análise. Só `atsScore` (0–100) é obrigatório: ele vira a compatibilidade (`match`) da vaga. Os outros campos aparecem na tela quando vierem:
+
+```json
+{ "atsScore": 82, "classificacao": "Compatível", "resumo": "...",
+  "palavrasChaveEncontradas": ["React"], "palavrasChaveFaltando": ["GraphQL"],
+  "pontosFortes": ["..."], "pontosFracos": ["..."], "sugestoes": ["..."] }
+```
+
+São aceitos também `[{...}]` (Respond to Webhook) e `{ "output": "..." }` (AI Agent, com o JSON em texto, cercado ou não por ```json). O backend grava a resposta em `jobs.ats`, então o fluxo não precisa escrever no banco.
+
 O cliente HTTP fica em [frontend/src/api/](frontend/src/api/).
 
 ### Onde ficam os currículos
@@ -42,6 +62,7 @@ O schema é criado **somente** por migrations (`synchronize` está desligado). E
 | `1793750400001-CreateResumes`   | `resumes` | metadados do arquivo enviado; no máximo **um** currículo principal por usuário |
 | `1793750400002-CreateJobs`      | `jobs`    | empresa, cargo, local, modalidade, aderência (0–100), tags e etapa do kanban |
 | `1793750400004-CreateUserSettings` | `user_settings` | preferências de busca e notificação (uma linha por usuário, criada no primeiro salvamento) |
+| `1793750400012-AddJobsManualAts` | `jobs`    | `description`, `resume_id` e `ats` (jsonb) para vagas cadastradas manualmente |
 
 Currículos e vagas pertencem a um usuário e são apagados junto com ele (`ON DELETE CASCADE`).
 
@@ -80,6 +101,8 @@ Documentação interativa em **`/api/docs`** (Swagger). Faça login, clique em *
 | `GET /api/jobs?stage=&search=&minMatch=` | Lista as vagas ordenadas por aderência, com filtro e busca  |
 | `GET /api/jobs/stats`                | Números dos cards do Dashboard                              |
 | `POST /api/jobs`                     | Cria uma vaga                                               |
+| `POST /api/jobs/manual`              | Cadastra uma vaga com descrição e currículo e pede a análise de ATS ao n8n; retorna `{ job, atsError }` (a vaga é salva mesmo se o n8n falhar) |
+| `POST /api/jobs/:id/ats`             | Refaz a análise de ATS (`{ "resumeId" }` opcional para trocar o currículo) |
 | `GET /api/settings`                  | Preferências de busca e notificação (padrões se nunca salvas) |
 | `PUT /api/settings`                  | Salva todas as preferências                                 |
 | `GET /api/jobs/:id`                  | Dados de uma vaga                                           |
@@ -148,6 +171,8 @@ npm run dev
 | `JWT_SECRET`          | backend  | **obrigatório**         | Segredo para assinar os tokens                  |
 | `JWT_EXPIRES_IN`      | backend  | `1d`                    | Validade do token                               |
 | `UPLOAD_DIR`          | backend  | `storage/curriculos`    | Pasta onde os currículos são gravados           |
+| `N8N_JOB_ATS_WEBHOOK_URL` | backend | `http://localhost:5678/webhook-test/job-ats` | Webhook que compara a vaga manual com o currículo |
+| `N8N_JOB_ATS_WEBHOOK_TIMEOUT_MS` | backend | `120000` | Tempo máximo de espera pelo webhook acima |
 | `API_PROXY_TARGET`    | frontend | `http://localhost:3000` | Destino do proxy `/api` do Vite                 |
 | `CHOKIDAR_USEPOLLING` | frontend | —                       | `true` para hot reload em volumes Docker        |
 | `TSC_WATCHFILE`       | backend  | —                       | Modo de watch do TypeScript (polling no Docker) |

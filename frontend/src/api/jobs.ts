@@ -1,8 +1,19 @@
 import { api } from './client'
+import type { AtsResult } from './resumes'
 import { WORK_MODE_LABELS, type WorkMode } from './settings'
 
 /** Colunas do Pipeline de candidaturas (enum `job_stage` no banco). */
 export type Stage = 'found' | 'applied' | 'interview' | 'offer' | 'rejected'
+
+/**
+ * Análise de ATS da vaga x currículo, devolvida pelo fluxo do n8n. Só `atsScore` é garantido
+ * pelo backend (vira a aderência da vaga); os demais campos são opcionais.
+ */
+export type JobAtsResult = AtsResult & {
+  resumo?: string
+  palavrasChaveEncontradas?: string[]
+  palavrasChaveFaltando?: string[]
+}
 
 /** Vaga como devolvida por GET /api/jobs (datas em ISO). */
 export type Job = {
@@ -17,9 +28,29 @@ export type Job = {
   /** Página da vaga no site de origem. */
   link: string | null
   postedAt: string | null
+  /** Descrição completa (vagas cadastradas manualmente). */
+  description: string | null
+  /** Currículo comparado na análise de ATS. */
+  resumeId: string | null
+  ats: JobAtsResult | null
   createdAt: string
   updatedAt: string
 }
+
+/** Corpo do POST /api/jobs/manual. */
+export type ManualJobInput = {
+  company: string
+  role: string
+  location?: string
+  workMode: WorkMode
+  link?: string
+  tags?: string[]
+  description: string
+  resumeId: string
+}
+
+/** A vaga é salva mesmo se a análise falhar; `atsError` diz o motivo. */
+export type ManualJobResult = { job: Job; atsError: string | null }
 
 export type ListJobsQuery = { stage?: Stage; minMatch?: number; search?: string }
 
@@ -42,6 +73,13 @@ export const jobsApi = {
 
   /** Pede ao n8n (via backend) para gerar vagas a partir do currículo escolhido. */
   search: (resumeId: string) => api<unknown>('/jobs/search', { method: 'POST', json: { resumeId } }),
+
+  /** Cadastra uma vaga manualmente e já compara com o currículo (ATS via n8n). */
+  createManual: (input: ManualJobInput) => api<ManualJobResult>('/jobs/manual', { method: 'POST', json: input }),
+
+  /** Refaz a análise de ATS (com outro currículo, se informado). */
+  analyze: (id: string, resumeId?: string) =>
+    api<Job>(`/jobs/${id}/ats`, { method: 'POST', json: resumeId ? { resumeId } : {} }),
 }
 
 export const stages: { id: Stage; label: string; color: string }[] = [
