@@ -1,8 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsUUID } from 'class-validator';
 import type { InterviewReport } from '../interview-report.entity.js';
-import type { TechnicalInterview } from '../technical-interview.entity.js';
 
 /** Quantidade de perguntas do roteiro (o fluxo do n8n espera pergunta1..pergunta4). */
 export const QUESTION_COUNT = 4;
@@ -11,20 +9,6 @@ export class SubmitInterviewDto {
   @ApiProperty({ format: 'uuid', description: 'Vaga da simulação.' })
   @IsUUID()
   jobId: string;
-}
-
-export const MAX_TECHNICAL_DESCRIPTION = 10_000;
-
-export class TechnicalInterviewRequestDto {
-  @ApiProperty({
-    maxLength: MAX_TECHNICAL_DESCRIPTION,
-    description: 'Texto da modal "Gerar entrevista técnica" (vai no campo "descricao" do webhook).',
-  })
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @IsString()
-  @IsNotEmpty({ message: 'Escreva a descrição da entrevista técnica.' })
-  @MaxLength(MAX_TECHNICAL_DESCRIPTION)
-  descricao: string;
 }
 
 export class InterviewAnswerDto {
@@ -48,30 +32,6 @@ export class InterviewAnswerDto {
 
   @ApiProperty({ type: String, nullable: true, description: 'Link do áudio gravado pelo n8n.' })
   externalAudioUrl: string | null;
-}
-
-export class TechnicalInterviewDto {
-  @ApiProperty({ format: 'uuid' })
-  id: string;
-
-  @ApiProperty({ type: String, nullable: true })
-  cargo: string | null;
-
-  @ApiProperty({ type: [String], description: 'Perguntas geradas (até 6), na ordem.' })
-  perguntas: string[];
-
-  @ApiProperty({ example: 'processando' })
-  status: string;
-
-  @ApiProperty()
-  createdAt: Date;
-
-  static from(t: TechnicalInterview): TechnicalInterviewDto {
-    const perguntas = [t.pergunta1, t.pergunta2, t.pergunta3, t.pergunta4, t.pergunta5, t.pergunta6]
-      .map((p) => p?.trim())
-      .filter((p): p is string => !!p);
-    return { id: t.id, cargo: t.cargo, perguntas, status: t.status, createdAt: t.createdAt };
-  }
 }
 
 export class InterviewReportSummaryDto {
@@ -127,19 +87,8 @@ export class InterviewReportDto extends InterviewReportSummaryDto {
   @ApiProperty({ type: [InterviewAnswerDto] })
   respostas: InterviewAnswerDto[];
 
-  @ApiProperty({
-    type: TechnicalInterviewDto,
-    nullable: true,
-    description: 'Entrevista técnica mais recente deste relatório (technical_interview.interview_id), ou null.',
-  })
-  technical: TechnicalInterviewDto | null;
-
   /** `audios` = perguntas com áudio salvo no backend. */
-  static fromReport(
-    r: InterviewReport,
-    audios: Set<number>,
-    technical: TechnicalInterview | null = null,
-  ): InterviewReportDto {
+  static fromReport(r: InterviewReport, audios: Set<number>): InterviewReportDto {
     const notas = [r.nota1, r.nota2, r.nota3, r.nota4];
     const urls = [r.audioUrl1, r.audioUrl2, r.audioUrl3, r.audioUrl4];
     const evaluated = r.avaliacao?.respostas ?? [];
@@ -163,7 +112,6 @@ export class InterviewReportDto extends InterviewReportSummaryDto {
       candidatoNome: r.candidatoNome,
       recomendacao: r.recomendacao ?? r.avaliacao?.avaliacao_geral?.recomendacao ?? null,
       respostas,
-      technical: technical ? TechnicalInterviewDto.from(technical) : null,
     };
   }
 }

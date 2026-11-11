@@ -2,7 +2,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DataSourceOptions } from 'typeorm';
 import { InterviewReport } from '../interviews/interview-report.entity.js';
-import { TechnicalInterview } from '../interviews/technical-interview.entity.js';
 import { Job } from '../jobs/job.entity.js';
 import { Resume } from '../resumes/resume.entity.js';
 import { UserSettings } from '../settings/user-settings.entity.js';
@@ -18,7 +17,7 @@ export function dataSourceOptions(env: NodeJS.ProcessEnv = process.env): DataSou
     username: env.DB_USER ?? 'jobhunter',
     password: env.DB_PASSWORD ?? 'jobhunter',
     database: env.DB_NAME ?? 'jobhunter',
-    entities: [User, Resume, Job, UserSettings, InterviewReport, TechnicalInterview],
+    entities: [User, Resume, Job, UserSettings, InterviewReport],
     // glob com barras normais para funcionar também no Windows
     migrations: [join(here, 'migrations', '*.js').replace(/\\/g, '/')],
     migrationsTableName: 'migrations',

@@ -41,7 +41,6 @@ services:
       INTERVIEW_AUDIO_DIR: storage/entrevistas
       N8N_INTERVIEW_WEBHOOK_URL: http://host.docker.internal:5678/webhook-test/interview_training
       N8N_INTERVIEW_WEBHOOK_TIMEOUT_MS: "180000"
-      N8N_TECHNICAL_INTERVIEW_WEBHOOK_URL: http://host.docker.internal:5678/webhook-test/technical_interview
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

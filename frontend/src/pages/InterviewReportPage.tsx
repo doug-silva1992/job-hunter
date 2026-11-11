@@ -1,6 +1,4 @@
 import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded'
-import CodeRounded from '@mui/icons-material/CodeRounded'
-import MicRounded from '@mui/icons-material/MicRounded'
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded'
 import LightbulbOutlined from '@mui/icons-material/LightbulbOutlined'
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded'
@@ -18,7 +16,6 @@ import DialogContentText from '@mui/material/DialogContentText'
 import DialogTitle from '@mui/material/DialogTitle'
 import LinearProgress from '@mui/material/LinearProgress'
 import Stack from '@mui/material/Stack'
-import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useOutletContext, useParams } from 'react-router'
@@ -27,7 +24,6 @@ import { interviewsApi, type InterviewAnswer, type InterviewReport } from '../ap
 import { CompanyAvatar } from '../components/CompanyAvatar'
 import { ScoreBadge } from '../components/ScoreBadge'
 import { QUESTIONS } from '../interview/interviewer'
-import { TechInterviewDialog } from '../interview/TechInterviewDialog'
 import { InterviewDialog } from '../interview/InterviewDialog'
 import type { Job } from '../api/jobs'
 import type { LayoutContext } from '../components/AppLayout'
@@ -46,27 +42,11 @@ export function InterviewReportPage() {
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [techOpen, setTechOpen] = useState(false)
   const [jobOpen, setJobOpen] = useState(false)
   const [interviewJob, setInterviewJob] = useState<Job | null>(null)
   const { allJobs, moveJob } = useOutletContext<LayoutContext>()
   // relatórios antigos (sem job_id) ou de vaga excluída não têm o botão "Ver vaga"
   const job = report?.jobId ? (allJobs.find((j) => j.id === report.jobId) ?? null) : null
-  // nota 5 ou menor = reprovação quase certa: não oferece a próxima etapa
-  const canGenerateTech = report?.notaGeral != null && report.notaGeral > 5
-  // se houver registro em technical_interview para este relatório, "Gerar" vira "Fazer entrevista técnica"
-  const technical = report?.technical ?? null
-  const hasTechQuestions = !!technical?.perguntas.length
-  const [techChatOpen, setTechChatOpen] = useState(false)
-
-  /** Recarrega o relatório (ex.: depois de gerar a entrevista técnica). */
-  async function reload() {
-    try {
-      setReport(await interviewsApi.get(id))
-    } catch {
-      // mantém o relatório que já está na tela
-    }
-  }
 
   useEffect(() => {
     let active = true
@@ -176,32 +156,11 @@ export function InterviewReportPage() {
           </Stack>
         )}
 
-        {(technical || canGenerateTech || job) && (
+        {job && (
           <Stack direction="row" sx={{ mt: 3, gap: 1.5, flexWrap: 'wrap' }}>
-            {/* já gerada: faz a entrevista; senão oferece gerar (só com nota acima de 5) */}
-            {technical ? (
-              <Tooltip title={hasTechQuestions ? '' : 'As perguntas ainda não foram geradas. Atualize a página em instantes.'}>
-                <span>
-                  <Button
-                    variant="contained"
-                    startIcon={<MicRounded />}
-                    onClick={() => setTechChatOpen(true)}
-                    disabled={!hasTechQuestions}
-                  >
-                    Fazer entrevista técnica
-                  </Button>
-                </span>
-              </Tooltip>
-            ) : canGenerateTech && (
-              <Button variant="contained" startIcon={<CodeRounded />} onClick={() => setTechOpen(true)}>
-                Gerar entrevista técnica
-              </Button>
-            )}
-            {job && (
-              <Button variant="outlined" startIcon={<WorkOutlineOutlined />} onClick={() => setJobOpen(true)}>
-                Ver vaga
-              </Button>
-            )}
+            <Button variant="outlined" startIcon={<WorkOutlineOutlined />} onClick={() => setJobOpen(true)}>
+              Ver vaga
+            </Button>
           </Stack>
         )}
       </Card>
@@ -236,25 +195,6 @@ export function InterviewReportPage() {
       )}
 
       {interviewJob && <InterviewDialog job={interviewJob} onClose={() => setInterviewJob(null)} />}
-
-      {techChatOpen && technical && hasTechQuestions && (
-        <InterviewDialog
-          technical={{
-            questions: technical.perguntas,
-            company: report.company ?? '',
-            role: technical.cargo ?? report.cargo ?? '',
-          }}
-          onClose={() => setTechChatOpen(false)}
-        />
-      )}
-
-      {techOpen && (
-        <TechInterviewDialog
-          report={report}
-          onClose={() => setTechOpen(false)}
-          onGenerated={() => void reload()}
-        />
-      )}
 
       <Dialog open={confirmDelete} onClose={() => !deleting && setConfirmDelete(false)}>
         <DialogTitle>Excluir relatório?</DialogTitle>

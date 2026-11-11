@@ -38,7 +38,6 @@ import {
   InterviewReportSummaryDto,
   QUESTION_COUNT,
   SubmitInterviewDto,
-  TechnicalInterviewRequestDto,
 } from './dto/interview-report.dto.js';
 import { AUDIO_FIELDS, InterviewsService, type AudioFiles } from './interviews.service.js';
 
@@ -103,11 +102,7 @@ export class InterviewsController {
   @ApiNotFoundResponse()
   async findOne(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string): Promise<InterviewReportDto> {
     const report = await this.interviews.findOne(user.id, id);
-    const [audios, technical] = await Promise.all([
-      this.interviews.savedAudios(report),
-      this.interviews.findTechnical(user.id, report.id),
-    ]);
-    return InterviewReportDto.fromReport(report, audios, technical);
+    return InterviewReportDto.fromReport(report, await this.interviews.savedAudios(report));
   }
 
   @Get(':id/audio/:question')
@@ -122,28 +117,6 @@ export class InterviewsController {
   ): Promise<StreamableFile> {
     const { stream, mimeType } = await this.interviews.openAudio(user.id, id, question);
     return new StreamableFile(stream, { type: mimeType });
-  }
-
-  @Post(':id/technical')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Gera a entrevista técnica a partir do relatório',
-    description:
-      'Envia ao webhook "technical_interview" do n8n (multipart/form-data: user_id, interview_id, job_id, nome, email, cargo, requisitos, descricao) e devolve a resposta do n8n.',
-  })
-  @ApiOkResponse({
-    description: 'Resposta do n8n.',
-    schema: { example: { sucesso: true, interview_id: 'uuid', cargo: 'Tech Lead', nivel: 'Sênior', perguntas: [{ pergunta: '...' }] } },
-  })
-  @ApiBadRequestResponse({ description: 'Descrição vazia ou longa demais.' })
-  @ApiNotFoundResponse()
-  @ApiBadGatewayResponse({ description: 'O webhook do n8n está indisponível ou retornou erro.' })
-  requestTechnical(
-    @CurrentUser() user: User,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: TechnicalInterviewRequestDto,
-  ): Promise<unknown> {
-    return this.interviews.requestTechnical(user, id, dto.descricao);
   }
 
   @Delete(':id')

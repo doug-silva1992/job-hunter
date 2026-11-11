@@ -18,10 +18,8 @@ import type { User } from '../users/user.entity.js';
 import { inspectAudio } from './audio-file.js';
 import { QUESTION_COUNT } from './dto/interview-report.dto.js';
 import { InterviewReport } from './interview-report.entity.js';
-import { TechnicalInterview } from './technical-interview.entity.js';
 
 export const DEFAULT_INTERVIEW_WEBHOOK_URL = 'http://localhost:5678/webhook-test/interview_training';
-export const DEFAULT_TECHNICAL_WEBHOOK_URL = 'http://localhost:5678/webhook-test/technical_interview';
 
 type Webhook = { url: string; timeoutMs: number; label: string };
 
@@ -45,24 +43,17 @@ export class InterviewsService implements OnModuleInit {
   private readonly logger = new Logger(InterviewsService.name);
   private readonly audioDir: string;
   private readonly interviewWebhook: Webhook;
-  private readonly technicalWebhook: Webhook;
 
   constructor(
     @InjectRepository(InterviewReport) private readonly reports: Repository<InterviewReport>,
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
     config: ConfigService,
-    @InjectRepository(TechnicalInterview) private readonly technicals: Repository<TechnicalInterview>,
   ) {
     this.audioDir = resolve(config.get('INTERVIEW_AUDIO_DIR', 'storage/entrevistas'));
     this.interviewWebhook = {
       url: config.get('N8N_INTERVIEW_WEBHOOK_URL') || DEFAULT_INTERVIEW_WEBHOOK_URL,
       timeoutMs: Number(config.get('N8N_INTERVIEW_WEBHOOK_TIMEOUT_MS')) || 180_000,
       label: 'entrevista',
-    };
-    this.technicalWebhook = {
-      url: config.get('N8N_TECHNICAL_INTERVIEW_WEBHOOK_URL') || DEFAULT_TECHNICAL_WEBHOOK_URL,
-      timeoutMs: Number(config.get('N8N_TECHNICAL_INTERVIEW_WEBHOOK_TIMEOUT_MS')) || 120_000,
-      label: 'entrevista técnica',
     };
   }
 
@@ -78,11 +69,6 @@ export class InterviewsService implements OnModuleInit {
     const report = await this.reports.findOne({ where: { id, userId }, relations: { job: true } });
     if (!report) throw new NotFoundException('Relatório de entrevista não encontrado.');
     return report;
-  }
-
-  /** Entrevista técnica mais recente do relatório (select em technical_interview por interview_id), se houver. */
-  findTechnical(userId: string, interviewId: string): Promise<TechnicalInterview | null> {
-    return this.technicals.findOne({ where: { userId, interviewId }, order: { createdAt: 'DESC' } });
   }
 
   /** Perguntas que têm áudio salvo em <userId>/<relatórioId>/. */
@@ -149,27 +135,6 @@ export class InterviewsService implements OnModuleInit {
       await rm(tempFolder, { recursive: true, force: true }).catch(() => undefined);
       throw error;
     }
-  }
-
-  /**
-   * Pede ao fluxo "Technical Interview" do n8n (webhook technical_interview) as 6 perguntas técnicas,
-   * a partir do relatório. multipart/form-data: user_id, interview_id, job_id, nome, email, cargo,
-   * requisitos e descricao (texto digitado na modal). O n8n grava em "technical_interview" e responde
-   * { sucesso, interview_id, cargo, nivel, perguntas }, que é devolvido como veio.
-   */
-  async requestTechnical(user: User, id: string, descricao: string): Promise<unknown> {
-    const report = await this.findOne(user.id, id);
-    const form = new FormData();
-    form.append('user_id', user.id);
-    form.append('interview_id', report.id);
-    // sem vaga ligada (relatórios antigos) o campo não vai: o n8n grava null
-    if (report.jobId) form.append('job_id', report.jobId);
-    form.append('nome', user.username);
-    form.append('email', user.email);
-    form.append('cargo', report.cargo ?? report.job?.role ?? '');
-    if (report.requisitos) form.append('requisitos', report.requisitos);
-    form.append('descricao', descricao);
-    return (await this.postToN8n(this.technicalWebhook, form)) ?? { sucesso: true };
   }
 
   async remove(userId: string, id: string): Promise<void> {
