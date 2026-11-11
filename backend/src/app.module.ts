@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { dataSourceOptions } from './database/typeorm.config.js';
 import { InterviewsModule } from './interviews/interviews.module.js';
 import { JobsModule } from './jobs/jobs.module.js';
+import { PreparationModule } from './preparation/preparation.module.js';
 import { ResumesModule } from './resumes/resumes.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { UsersModule } from './users/users.module.js';
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module.js';
     JobsModule,
     SettingsModule,
     InterviewsModule,
+    PreparationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
