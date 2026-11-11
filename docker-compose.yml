@@ -38,7 +38,6 @@ services:
       # n8n rodando na máquina host (fora deste compose)
       N8N_ATS_WEBHOOK_URL: http://host.docker.internal:5678/webhook-test/ats-check
       N8N_SEARCH_JOBS_WEBHOOK_URL: http://host.docker.internal:5678/webhook-test/search-jobs
-      N8N_JOB_ATS_WEBHOOK_URL: http://host.docker.internal:5678/webhook-test/job-ats
       INTERVIEW_AUDIO_DIR: storage/entrevistas
       N8N_INTERVIEW_WEBHOOK_URL: http://host.docker.internal:5678/webhook-test/interview_training
       N8N_INTERVIEW_WEBHOOK_TIMEOUT_MS: "180000"

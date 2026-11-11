@@ -26,11 +26,8 @@ import {
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { User } from '../users/user.entity.js';
 import {
-  AnalyzeJobDto,
   CreateJobDto,
-  CreateManualJobDto,
   JobResponseDto,
-  ManualJobResponseDto,
   JobStatsDto,
   ListJobsQueryDto,
   SearchJobsDto,
@@ -73,36 +70,6 @@ export class JobsController {
   @ApiBadGatewayResponse({ description: 'O webhook do n8n está indisponível ou retornou erro.' })
   search(@CurrentUser() user: User, @Body() dto: SearchJobsDto): Promise<unknown> {
     return this.jobs.search(user.id, dto.resumeId);
-  }
-
-  @Post('manual')
-  @ApiOperation({
-    summary: 'Cadastra uma vaga manualmente e analisa o ATS dela com um currículo',
-    description:
-      'Salva a vaga e envia ao webhook de ATS de vagas do n8n (JSON) os dados da vaga, a descrição e o currículo. ' +
-      'O `atsScore` devolvido vira a aderência (`match`). Se o n8n falhar, a vaga fica salva e `atsError` explica o motivo.',
-  })
-  @ApiCreatedResponse({ type: ManualJobResponseDto })
-  @ApiBadRequestResponse({ description: 'Dados inválidos.' })
-  @ApiNotFoundResponse({ description: 'Currículo não encontrado.' })
-  async createManual(@CurrentUser() user: User, @Body() dto: CreateManualJobDto): Promise<ManualJobResponseDto> {
-    const { job, atsError } = await this.jobs.createManual(user.id, dto);
-    return { job: JobResponseDto.from(job), atsError };
-  }
-
-  @Post(':id/ats')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Refaz a análise de ATS da vaga (vaga x currículo)' })
-  @ApiOkResponse({ type: JobResponseDto })
-  @ApiBadRequestResponse({ description: 'Vaga sem descrição ou sem currículo.' })
-  @ApiNotFoundResponse({ description: 'Vaga ou currículo não encontrado.' })
-  @ApiBadGatewayResponse({ description: 'O webhook do n8n está indisponível ou respondeu sem atsScore.' })
-  async analyze(
-    @CurrentUser() user: User,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: AnalyzeJobDto,
-  ): Promise<JobResponseDto> {
-    return JobResponseDto.from(await this.jobs.analyze(user.id, id, dto.resumeId));
   }
 
   @Get(':id')

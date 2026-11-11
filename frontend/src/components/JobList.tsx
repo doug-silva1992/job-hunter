@@ -1,5 +1,4 @@
 import CheckRounded from '@mui/icons-material/CheckRounded'
-import FactCheckOutlined from '@mui/icons-material/FactCheckOutlined'
 import FmdGoodOutlined from '@mui/icons-material/FmdGoodOutlined'
 import MicRounded from '@mui/icons-material/MicRounded'
 import OpenInNewRounded from '@mui/icons-material/OpenInNewRounded'
@@ -28,8 +27,6 @@ type Props = {
   total?: number
   /** Paginação, exibida no rodapé do card. */
   footer?: ReactNode
-  /** Abre a análise de ATS (só para vagas com descrição ou já analisadas). */
-  onShowAts?: (job: Job) => void
 }
 
 export function JobList({
@@ -39,7 +36,6 @@ export function JobList({
   emptyText = 'Nenhuma vaga encontrada para essa busca.',
   total = jobs.length,
   footer,
-  onShowAts,
 }: Props) {
   const [interviewJob, setInterviewJob] = useState<Job | null>(null)
 
@@ -109,17 +105,6 @@ export function JobList({
                     sx={{ alignItems: 'center', gap: 1.5, ml: { xs: 'auto', sm: 0 }, flexWrap: 'wrap', justifyContent: 'flex-end' }}
                   >
                     <MatchBadge value={job.match} />
-                    {onShowAts && (job.ats || job.description) && (
-                      <Button
-                        variant="outlined"
-                        color={job.ats ? 'primary' : 'warning'}
-                        startIcon={<FactCheckOutlined />}
-                        onClick={() => onShowAts(job)}
-                        aria-label={`Ver análise de ATS de ${job.role} na ${job.company}`}
-                      >
-                        {job.ats ? 'ATS' : 'Analisar'}
-                      </Button>
-                    )}
                     <Button
                       variant="outlined"
                       startIcon={<MicRounded />}

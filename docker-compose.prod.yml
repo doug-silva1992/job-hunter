@@ -32,8 +32,6 @@ services:
       UPLOAD_DIR: /app/storage/curriculos
       N8N_ATS_WEBHOOK_URL: ${N8N_ATS_WEBHOOK_URL:?Defina N8N_ATS_WEBHOOK_URL no .env}
       N8N_SEARCH_JOBS_WEBHOOK_URL: ${N8N_SEARCH_JOBS_WEBHOOK_URL:?Defina N8N_SEARCH_JOBS_WEBHOOK_URL no .env}
-      # opcional enquanto o fluxo não existe: sem ele, a vaga manual é salva e a análise de ATS falha
-      N8N_JOB_ATS_WEBHOOK_URL: ${N8N_JOB_ATS_WEBHOOK_URL:-}
       INTERVIEW_AUDIO_DIR: /app/storage/entrevistas
       N8N_INTERVIEW_WEBHOOK_URL: ${N8N_INTERVIEW_WEBHOOK_URL:?Defina N8N_INTERVIEW_WEBHOOK_URL no .env}
       N8N_TECHNICAL_INTERVIEW_WEBHOOK_URL: ${N8N_TECHNICAL_INTERVIEW_WEBHOOK_URL:?Defina N8N_TECHNICAL_INTERVIEW_WEBHOOK_URL no .env}

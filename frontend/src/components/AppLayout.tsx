@@ -25,8 +25,6 @@ export type LayoutContext = {
   reloadJobs: () => void
   /** Atualiza na tela na hora e grava na API; desfaz e rejeita se a API falhar. */
   moveJob: (id: string, stage: Stage) => Promise<void>
-  /** Insere ou substitui a vaga na tela (depois de cadastrar ou reanalisar). */
-  saveJob: (job: Job) => void
 }
 
 const message = (e: unknown) => (e instanceof ApiError ? e.message : 'Não foi possível concluir a operação.')
@@ -76,10 +74,6 @@ export function AppLayout() {
     }
   }, [])
 
-  const saveJob = useCallback((job: Job) => {
-    setJobs((prev) => (prev.some((j) => j.id === job.id) ? prev.map((j) => (j.id === job.id ? job : j)) : [job, ...prev]))
-  }, [])
-
   const visible = useMemo(() => visibleJobs(jobs, settings), [jobs, settings])
   const newToday = foundToday(visible.filter((j) => j.stage === 'found'))
 
@@ -117,7 +111,6 @@ export function AppLayout() {
                 error,
                 reloadJobs,
                 moveJob,
-                saveJob,
               } satisfies LayoutContext
             }
           />

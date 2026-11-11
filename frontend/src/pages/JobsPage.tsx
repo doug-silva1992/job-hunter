@@ -1,4 +1,3 @@
-import AddRounded from '@mui/icons-material/AddRounded'
 import TravelExploreRounded from '@mui/icons-material/TravelExploreRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -11,12 +10,10 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useMemo, useState } from 'react'
 import { Link as RouterLink, useOutletContext } from 'react-router'
-import { matchesSearch, paginate, type Job } from '../api/jobs'
+import { matchesSearch, paginate } from '../api/jobs'
 import { keywordHits } from '../api/preferences'
-import { AddJobDialog } from '../components/AddJobDialog'
 import type { LayoutContext } from '../components/AppLayout'
 import { GenerateJobsDialog } from '../components/GenerateJobsDialog'
-import { JobAtsDialog } from '../components/JobAtsDialog'
 import { JobList } from '../components/JobList'
 import { JobsStatus } from '../components/JobsStatus'
 import { SearchField } from '../components/SearchField'
@@ -25,7 +22,7 @@ import { paginationLabel } from '../components/paginationLabels'
 const PAGE_SIZES = [10, 20, 50]
 
 export function JobsPage() {
-  const { jobs: filteredJobs, allJobs, hiddenCount, settings, loading, error, reloadJobs, moveJob, saveJob } =
+  const { jobs: filteredJobs, allJobs, hiddenCount, settings, loading, error, reloadJobs, moveJob } =
     useOutletContext<LayoutContext>()
   const [showAll, setShowAll] = useState(false)
   const jobs = showAll ? allJobs : filteredJobs
@@ -36,9 +33,6 @@ export function JobsPage() {
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
   const [generateOpen, setGenerateOpen] = useState(false)
   const [generateKey, setGenerateKey] = useState(0)
-  const [addOpen, setAddOpen] = useState(false)
-  const [addKey, setAddKey] = useState(0)
-  const [atsView, setAtsView] = useState<{ job: Job; error: string | null } | null>(null)
 
   // ordena por aderência; no empate, vêm antes as que citam mais palavras-chave das preferências
   const results = useMemo(
@@ -126,28 +120,17 @@ export function JobsPage() {
             Vagas encontradas para o seu perfil, ordenadas por compatibilidade.
           </Typography>
         </Box>
-        <Stack direction="row" sx={{ gap: 1, flexShrink: 0, flexWrap: 'wrap' }}>
-          <Button
-            variant="outlined"
-            startIcon={<AddRounded />}
-            onClick={() => {
-              setAddKey((k) => k + 1)
-              setAddOpen(true)
-            }}
-          >
-            Adicionar vaga
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<TravelExploreRounded />}
-            onClick={() => {
-              setGenerateKey((k) => k + 1)
-              setGenerateOpen(true)
-            }}
-          >
-            Gerar vagas
-          </Button>
-        </Stack>
+        <Button
+          variant="contained"
+          startIcon={<TravelExploreRounded />}
+          onClick={() => {
+            setGenerateKey((k) => k + 1)
+            setGenerateOpen(true)
+          }}
+          sx={{ flexShrink: 0 }}
+        >
+          Gerar vagas
+        </Button>
       </Stack>
 
       <SearchField
@@ -203,7 +186,6 @@ export function JobsPage() {
                 : undefined
           }
           footer={footer}
-          onShowAts={(job) => setAtsView({ job, error: null })}
         />
       )}
 
@@ -216,30 +198,6 @@ export function JobsPage() {
           setToast(`Busca de vagas iniciada com "${resume.originalName}"`)
         }}
       />
-
-      <AddJobDialog
-        key={addKey}
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onCreated={({ job, atsError }) => {
-          setAddOpen(false)
-          saveJob(job)
-          setAtsView({ job, error: atsError })
-        }}
-      />
-
-      {atsView && (
-        <JobAtsDialog
-          key={atsView.job.id}
-          job={atsView.job}
-          initialError={atsView.error}
-          onClose={() => setAtsView(null)}
-          onUpdated={(job) => {
-            saveJob(job)
-            setAtsView({ job, error: null })
-          }}
-        />
-      )}
 
       <Snackbar
         open={toast !== null}
