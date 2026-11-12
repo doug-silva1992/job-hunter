@@ -49,7 +49,7 @@ describe('PreparationService.generate', () => {
     const result = await service.generate(user, 'j1');
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://localhost:5678/webhook-test/interview-prep');
+    expect(url).toBe('http://localhost:5678/webhook/interview-prep');
     expect(Object.fromEntries((init.body as FormData).entries())).toEqual({
       empresa: 'Acme',
       tags: 'Node,NestJS',

@@ -52,6 +52,18 @@ export const stages: { id: Stage; label: string; color: string }[] = [
   { id: 'rejected', label: 'Rejeitados', color: '#C9372C' },
 ]
 
+/** Você é candidato à vaga: está em Candidatado, Entrevista ou Oferta no pipeline. */
+export const isCandidate = (job: Job) => job.stage === 'applied' || job.stage === 'interview' || job.stage === 'offer'
+
+/** Vaga com empresa (não vazia nem "Não informado") e ao menos uma tag: o preparatório precisa das duas. */
+export function hasPreparationData(job: Job): boolean {
+  const company = job.company?.trim() ?? ''
+  return !!company && normalize(company) !== 'nao informado' && job.tags.some((t) => t.trim())
+}
+
+/** Aparece no Preparatório: você é candidato e a vaga tem empresa e tags. */
+export const canPrepare = (job: Job) => isCandidate(job) && hasPreparationData(job)
+
 /** Só abre links http(s): o valor vem de fora (n8n) e não deve executar `javascript:`. */
 export function safeJobUrl(link: string | null): string | null {
   if (!link) return null

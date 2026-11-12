@@ -51,7 +51,7 @@ describe('InterviewsService.submit', () => {
     await service.submit(user, 'j1', allFiles());
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://localhost:5678/webhook-test/interview_training');
+    expect(url).toBe('http://localhost:5678/webhook/interview_training');
     const form = init.body as FormData;
     expect(form.get('cargo')).toBe('Desenvolvedor C#');
     expect(form.get('requisitos')).toBe('Laravel, PHP');

@@ -17,7 +17,7 @@ import type { User } from '../users/user.entity.js';
 import { inspectResumeFile } from './resume-file.js';
 import { Resume } from './resume.entity.js';
 
-export const DEFAULT_ATS_WEBHOOK_URL = 'http://localhost:5678/webhook-test/ats-check';
+export const DEFAULT_ATS_WEBHOOK_URL = 'http://localhost:5678/webhook/ats-check';
 
 
 @Injectable()

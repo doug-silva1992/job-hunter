@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { InterviewReportPage } from './pages/InterviewReportPage'
 import { InterviewsPage } from './pages/InterviewsPage'
 import { JobsPage } from './pages/JobsPage'
+import { PreparationPage } from './pages/PreparationPage'
 import { ResumesPage } from './pages/ResumesPage'
 import { SettingsPage } from './pages/SettingsPage'
 
@@ -21,6 +22,8 @@ function App() {
         <Route path="vagas" element={<JobsPage />} />
         <Route path="entrevistas" element={<InterviewsPage />} />
         <Route path="entrevistas/:id" element={<InterviewReportPage />} />
+        <Route path="preparatorio" element={<PreparationPage />} />
+        <Route path="preparatorio/:jobId" element={<PreparationPage />} />
         <Route path="configuracoes" element={<SettingsPage />} />
       </Route>
 

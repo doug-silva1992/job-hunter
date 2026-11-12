@@ -7,7 +7,7 @@ import type { User } from '../users/user.entity.js';
 import { grade, parseCompany, parseQuestions, toExam } from './preparation-exam.js';
 import { Preparation } from './preparation.entity.js';
 
-export const DEFAULT_PREPARATION_WEBHOOK_URL = 'http://localhost:5678/webhook-test/interview-prep';
+export const DEFAULT_PREPARATION_WEBHOOK_URL = 'http://localhost:5678/webhook/interview-prep';
 
 /** Etapas do pipeline em que o usuário é candidato à vaga. */
 const CANDIDATE_STAGES: JobStage[] = [JobStage.Applied, JobStage.Interview, JobStage.Offer];

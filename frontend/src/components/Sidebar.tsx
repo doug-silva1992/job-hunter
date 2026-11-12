@@ -1,6 +1,7 @@
 import DashboardOutlined from '@mui/icons-material/DashboardOutlined'
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined'
 import RecordVoiceOverOutlined from '@mui/icons-material/RecordVoiceOverOutlined'
+import SchoolOutlined from '@mui/icons-material/SchoolOutlined'
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined'
 import WorkOutlineOutlined from '@mui/icons-material/WorkOutlineOutlined'
 import Box from '@mui/material/Box'
@@ -21,6 +22,7 @@ const menu: { label: string; path: string; icon: ReactNode }[] = [
   { label: 'Vagas', path: '/vagas', icon: <WorkOutlineOutlined /> },
   { label: 'Currículos', path: '/curriculos', icon: <DescriptionOutlined /> },
   { label: 'Entrevistas', path: '/entrevistas', icon: <RecordVoiceOverOutlined /> },
+  { label: 'Preparatório', path: '/preparatorio', icon: <SchoolOutlined /> },
   { label: 'Configurações', path: '/configuracoes', icon: <SettingsOutlined /> },
 ]
 

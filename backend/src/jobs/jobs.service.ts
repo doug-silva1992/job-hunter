@@ -6,7 +6,7 @@ import { ResumesService } from '../resumes/resumes.service.js';
 import type { CreateJobDto, JobStatsDto, ListJobsQueryDto, UpdateJobDto } from './dto/job.dto.js';
 import { Job, JobStage } from './job.entity.js';
 
-export const DEFAULT_SEARCH_JOBS_WEBHOOK_URL = 'http://localhost:5678/webhook-test/search-jobs';
+export const DEFAULT_SEARCH_JOBS_WEBHOOK_URL = 'http://localhost:5678/webhook/search-jobs';
 
 @Injectable()
 export class JobsService {

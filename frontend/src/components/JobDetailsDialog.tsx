@@ -1,6 +1,7 @@
 import CloseRounded from '@mui/icons-material/CloseRounded'
 import MicRounded from '@mui/icons-material/MicRounded'
 import OpenInNewRounded from '@mui/icons-material/OpenInNewRounded'
+import SchoolOutlined from '@mui/icons-material/SchoolOutlined'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -13,7 +14,8 @@ import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useState, type ReactNode } from 'react'
-import { postedLabel, safeJobUrl, stages, type Job, type Stage } from '../api/jobs'
+import { useNavigate } from 'react-router'
+import { canPrepare, postedLabel, safeJobUrl, stages, type Job, type Stage } from '../api/jobs'
 import { WORK_MODE_LABELS } from '../api/settings'
 import { CompanyAvatar } from './CompanyAvatar'
 import { MatchBadge } from './MatchBadge'
@@ -43,6 +45,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 export function JobDetailsDialog({ job, onClose, onMove, onInterview }: Props) {
   const [moving, setMoving] = useState(false)
+  const navigate = useNavigate()
   const url = safeJobUrl(job.link)
   const stage = stages.find((s) => s.id === job.stage)
 
@@ -161,6 +164,11 @@ export function JobDetailsDialog({ job, onClose, onMove, onInterview }: Props) {
       </DialogContent>
 
       <DialogActions sx={{ px: 3, py: 2, gap: 1, flexWrap: 'wrap' }}>
+        {canPrepare(job) && (
+          <Button startIcon={<SchoolOutlined />} onClick={() => navigate(`/preparatorio/${job.id}`)}>
+            Preparatório
+          </Button>
+        )}
         <Button startIcon={<MicRounded />} onClick={() => onInterview(job)}>
           Simular entrevista
         </Button>

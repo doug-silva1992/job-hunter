@@ -19,7 +19,7 @@ import { inspectAudio } from './audio-file.js';
 import { QUESTION_COUNT } from './dto/interview-report.dto.js';
 import { InterviewReport } from './interview-report.entity.js';
 
-export const DEFAULT_INTERVIEW_WEBHOOK_URL = 'http://localhost:5678/webhook-test/interview_training';
+export const DEFAULT_INTERVIEW_WEBHOOK_URL = 'http://localhost:5678/webhook/interview_training';
 
 type Webhook = { url: string; timeoutMs: number; label: string };
 
