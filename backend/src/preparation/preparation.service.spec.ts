@@ -1,11 +1,11 @@
 import { BadGatewayException, BadRequestException, NotFoundException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Job } from '../jobs/job.entity.js';
 import type { User } from '../users/user.entity.js';
-import { parsePreparation } from './preparation-response.js';
-import { PreparationService } from './preparation.service.js';
+import { grade, parseQuestions, toExam } from './preparation-exam.js';
+import type { Preparation } from './preparation.entity.js';
+import { formatTags, PreparationService } from './preparation.service.js';
 
 const user = { id: 'u1', username: 'douglas', email: 'd@example.com' } as User;
 const job = {
@@ -20,13 +20,7 @@ const job = {
   link: 'https://acme.com/vaga',
 } as unknown as Job;
 
-const answer = {
-  empresa: { nome: 'Acme S.A.', resumo: 'Faz foguetes.', site: 'acme.com', produtos: ['Foguetes'], dicas: '- Seja pontual\n- Estude Node' },
-  perguntas: [
-    { pergunta: 'O que é NestJS?', alternativas: ['Framework Node', 'Banco de dados'], correta: 0, explicacao: 'É um framework.' },
-    { pergunta: 'Sem alternativas', alternativas: [], correta: 0 },
-  ],
-};
+const answer = [{ qualquer: 'formato', vindo: ['do', 'n8n'] }];
 
 describe('PreparationService.generate', () => {
   const fetchMock = vi.fn<typeof fetch>();
@@ -36,7 +30,11 @@ describe('PreparationService.generate', () => {
   beforeEach(() => {
     findOneBy = vi.fn().mockResolvedValue(job);
     const config = { get: () => undefined };
-    service = new PreparationService({ findOneBy } as unknown as Repository<Job>, config as unknown as ConfigService);
+    service = new PreparationService(
+      { findOneBy } as unknown as Repository<Job>,
+      config as unknown as ConfigService,
+      {} as Repository<Preparation>,
+    );
     vi.stubGlobal('fetch', fetchMock);
   });
 
@@ -45,27 +43,20 @@ describe('PreparationService.generate', () => {
     fetchMock.mockReset();
   });
 
-  it('envia a vaga ao n8n e normaliza a resposta', async () => {
-    fetchMock.mockResolvedValue(new Response(JSON.stringify([{ output: answer }]), { status: 200 }));
+  it('envia a vaga ao n8n e devolve a resposta como veio', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(answer), { status: 200 }));
 
     const result = await service.generate(user, 'j1');
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://localhost:5678/webhook-test/preparatorio');
+    expect(url).toBe('http://localhost:5678/webhook-test/interview-prep');
     expect(Object.fromEntries((init.body as FormData).entries())).toEqual({
+      empresa: 'Acme',
+      tags: 'Node,NestJS',
       user_id: 'u1',
       job_id: 'j1',
-      nome: 'douglas',
-      empresa: 'Acme',
-      cargo: 'Dev Node',
-      requisitos: 'Node, NestJS',
-      localizacao: 'São Paulo',
-      modalidade: 'Remoto',
-      link: 'https://acme.com/vaga',
-      quantidade: '10',
     });
-    expect(result.empresa).toMatchObject({ nome: 'Acme S.A.', site: 'https://acme.com/', dicas: ['Seja pontual', 'Estude Node'] });
-    expect(result.perguntas).toEqual([answer.perguntas[0]]);
+    expect(result).toEqual(answer);
   });
 
   it('recusa vaga de outro usuário', async () => {
@@ -80,23 +71,89 @@ describe('PreparationService.generate', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('falha se não vier nenhuma pergunta válida', async () => {
-    fetchMock.mockResolvedValue(new Response(JSON.stringify({ empresa: {}, perguntas: [] }), { status: 200 }));
+  it.each([
+    ['empresa vazia', { company: '  ' }],
+    ['empresa "Não informado"', { company: 'Não informado' }],
+    ['sem tags', { tags: [] }],
+    ['tags em branco', { tags: [' '] }],
+  ])('recusa vaga com %s', async (_, patch) => {
+    findOneBy.mockResolvedValue({ ...job, ...patch });
+    await expect(service.generate(user, 'j1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('falha se o n8n responder com erro', async () => {
+    fetchMock.mockResolvedValue(new Response('erro', { status: 500 }));
     await expect(service.generate(user, 'j1')).rejects.toBeInstanceOf(BadGatewayException);
   });
 });
 
-describe('parsePreparation', () => {
-  it('lê JSON em string com cercas de código e a resposta por letra ou texto', () => {
-    const raw = '```json\n' + JSON.stringify({
-      perguntas: [
-        { pergunta: 'A?', alternativas: ['x', 'y', 'z'], correta: 'C' },
-        { pergunta: 'B?', alternativas: ['x', 'y'], correta: 'y' },
-        { pergunta: 'C?', alternativas: ['x', 'y'], correta: 5 },
+describe('formatTags', () => {
+  it('separa por vírgula e põe entre aspas as tags com espaço', () => {
+    expect(formatTags(['.Net', 'C#', 'data science', 'Typescript ', 'ruby/rails', '', 'say "hi"'])).toBe(
+      '.Net,C#,"data science","Typescript ",ruby/rails,"say ""hi"""',
+    );
+  });
+});
+// formato gravado pelo n8n na coluna "questions"
+const stored = JSON.stringify([
+  {
+    numero: 1,
+    tecnologia: 'Banco de Dados SQL',
+    nivel: 'intermediário',
+    pergunta: 'Qual JOIN retorna só as linhas com correspondência?',
+    alternativas: { A: 'LEFT JOIN', B: 'INNER JOIN', C: 'FULL OUTER JOIN', D: 'RIGHT JOIN' },
+    resposta_correta: 'B',
+    explicacao: 'O INNER JOIN retorna só as correspondências.',
+  },
+  {
+    numero: 2,
+    tecnologia: 'Redes',
+    nivel: 'intermediário',
+    pergunta: 'Qual protocolo traduz nomes de domínio?',
+    alternativas: { A: 'DHCP', B: 'SNMP', C: 'DNS', D: 'FTP' },
+    resposta_correta: 'C',
+    explicacao: 'DNS.',
+  },
+]);
+
+describe('prova do preparatório', () => {
+  it('não manda a resposta certa para a tela', () => {
+    const [q] = toExam(parseQuestions(stored));
+    expect(q).toEqual({
+      numero: 1,
+      tecnologia: 'Banco de Dados SQL',
+      nivel: 'intermediário',
+      pergunta: 'Qual JOIN retorna só as linhas com correspondência?',
+      alternativas: [
+        { letra: 'A', texto: 'LEFT JOIN' },
+        { letra: 'B', texto: 'INNER JOIN' },
+        { letra: 'C', texto: 'FULL OUTER JOIN' },
+        { letra: 'D', texto: 'RIGHT JOIN' },
       ],
-    }) + '\n```';
-    const { empresa, perguntas } = parsePreparation({ text: raw }, 'Acme');
-    expect(empresa.nome).toBe('Acme');
-    expect(perguntas.map((p) => p.correta)).toEqual([2, 1]);
+    });
+  });
+
+  it('corrige e dá nota de 0 a 10', () => {
+    const result = grade(parseQuestions(stored), { '1': 'b', '2': 'A' });
+    expect(result).toMatchObject({ score: 5, acertos: 1, total: 2 });
+    expect(result.resultado[1]).toEqual({ numero: 2, resposta: 'A', correta: 'C', acertou: false, explicacao: 'DNS.' });
+    expect(grade(parseQuestions(stored), {}).score).toBe(0);
+  });
+
+  it('grava a nota na coluna score', async () => {
+    const prep = { id: 'p1', userId: 'u1', jobId: 'j1', questions: stored } as Preparation;
+    const repo = { findOneBy: vi.fn().mockResolvedValue(prep), update: vi.fn().mockResolvedValue(undefined) };
+    const service = new PreparationService(
+      {} as Repository<Job>,
+      { get: () => undefined } as unknown as ConfigService,
+      repo as unknown as Repository<Preparation>,
+    );
+
+    const result = await service.submitExam('u1', 'j1', 'p1', { '1': 'B', '2': 'C' });
+
+    expect(repo.findOneBy).toHaveBeenCalledWith({ id: 'p1', userId: 'u1', jobId: 'j1' });
+    expect(repo.update).toHaveBeenCalledWith({ id: 'p1' }, { score: 10 });
+    expect(result.score).toBe(10);
   });
 });

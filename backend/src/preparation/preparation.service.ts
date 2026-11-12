@@ -4,18 +4,31 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Job, JobStage } from '../jobs/job.entity.js';
 import type { User } from '../users/user.entity.js';
-import type { PreparationDto } from './dto/preparation.dto.js';
-import { parsePreparation } from './preparation-response.js';
+import { grade, parseCompany, parseQuestions, toExam } from './preparation-exam.js';
+import { Preparation } from './preparation.entity.js';
 
-export const DEFAULT_PREPARATION_WEBHOOK_URL = 'http://localhost:5678/webhook-test/preparatorio';
-
-/** Quantas perguntas o questionário pede ao n8n. */
-export const QUIZ_SIZE = 10;
+export const DEFAULT_PREPARATION_WEBHOOK_URL = 'http://localhost:5678/webhook-test/interview-prep';
 
 /** Etapas do pipeline em que o usuário é candidato à vaga. */
 const CANDIDATE_STAGES: JobStage[] = [JobStage.Applied, JobStage.Interview, JobStage.Offer];
 
-const WORK_MODES: Record<string, string> = { remote: 'Remoto', hybrid: 'Híbrido', onsite: 'Presencial' };
+/**
+ * Tags separadas por vírgula, no formato que o fluxo "interview-prep" espera:
+ * `.Net,C#,"data science",react` (entre aspas as que têm espaço, vírgula ou aspas).
+ */
+export function formatTags(tags: string[]): string {
+  return tags
+    .filter((t) => t.trim())
+    .map((t) => (/[\s,"]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t))
+    .join(',');
+}
+
+/** Empresa preenchida (não vazia nem "Não informado") e ao menos uma tag. */
+export function hasPreparationData(job: Pick<Job, 'company' | 'tags'>): boolean {
+  const company = (job.company ?? '').trim();
+  const normalized = company.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  return !!company && normalized !== 'nao informado' && (job.tags ?? []).some((t) => t.trim());
+}
 
 @Injectable()
 export class PreparationService {
@@ -26,42 +39,62 @@ export class PreparationService {
   constructor(
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
     config: ConfigService,
+    @InjectRepository(Preparation) private readonly preparations: Repository<Preparation>,
   ) {
     this.webhookUrl = config.get('N8N_PREPARATION_WEBHOOK_URL') || DEFAULT_PREPARATION_WEBHOOK_URL;
     this.timeoutMs = Number(config.get('N8N_PREPARATION_WEBHOOK_TIMEOUT_MS')) || 120_000;
   }
 
   /**
-   * Pede ao fluxo "Preparatório" do n8n as informações da empresa e o questionário sobre a vaga.
-   * multipart/form-data: user_id, job_id, nome, empresa, cargo, requisitos, localizacao,
-   * modalidade, link e quantidade (perguntas). Nada é gravado: o conteúdo é gerado a cada pedido.
+   * Envia a vaga ao fluxo "interview-prep" do n8n (multipart/form-data: empresa, tags, user_id e
+   * job_id) e devolve a resposta do n8n como veio.
    */
-  async generate(user: User, jobId: string): Promise<PreparationDto> {
+  async generate(user: User, jobId: string): Promise<unknown> {
     const job = await this.jobs.findOneBy({ id: jobId, userId: user.id });
     if (!job) throw new NotFoundException('Vaga não encontrada.');
     if (!CANDIDATE_STAGES.includes(job.stage)) {
       throw new BadRequestException('O preparatório é só para vagas em que você é candidato.');
     }
+    if (!hasPreparationData(job)) {
+      throw new BadRequestException('O preparatório precisa da empresa e das tags da vaga.');
+    }
 
     const form = new FormData();
+    form.append('empresa', job.company);
+    form.append('tags', formatTags(job.tags));
     form.append('user_id', user.id);
     form.append('job_id', job.id);
-    form.append('nome', user.username);
-    form.append('empresa', job.company);
-    form.append('cargo', job.role);
-    form.append('requisitos', job.tags.join(', '));
-    form.append('localizacao', job.location);
-    form.append('modalidade', WORK_MODES[job.workMode] ?? job.workMode);
-    if (job.link) form.append('link', job.link);
-    form.append('quantidade', String(QUIZ_SIZE));
 
-    const body = await this.post(form);
-    const { empresa, perguntas } = parsePreparation(body, job.company);
-    if (perguntas.length === 0) {
-      this.logger.error(`Preparatório sem perguntas válidas para a vaga ${job.id}: ${JSON.stringify(body)?.slice(0, 500)}`);
-      throw new BadGatewayException('O n8n não devolveu um questionário válido. Tente gerar de novo.');
-    }
-    return { jobId: job.id, empresa, perguntas };
+    return this.post(form);
+  }
+
+  /** Preparatório mais recente da vaga (gravado pelo n8n), com as perguntas sem a resposta certa. */
+  async findExam(userId: string, jobId: string) {
+    const prep = await this.latest(userId, jobId);
+    return {
+      id: prep.id,
+      jobId: prep.jobId,
+      company: parseCompany(prep.company),
+      questions: toExam(parseQuestions(prep.questions)),
+      score: prep.score,
+      createdAt: prep.createdAt,
+      updatedAt: prep.updatedAt,
+    };
+  }
+
+  /** Corrige a prova, grava a nota (0 a 10) na coluna score e devolve o gabarito. */
+  async submitExam(userId: string, jobId: string, preparationId: string, answers: Record<string, string>) {
+    const prep = await this.preparations.findOneBy({ id: preparationId, userId, jobId });
+    if (!prep) throw new NotFoundException('Preparatório não encontrado.');
+    const result = grade(parseQuestions(prep.questions), answers);
+    await this.preparations.update({ id: prep.id }, { score: result.score });
+    return result;
+  }
+
+  private async latest(userId: string, jobId: string): Promise<Preparation> {
+    const prep = await this.preparations.findOne({ where: { userId, jobId }, order: { createdAt: 'DESC' } });
+    if (!prep) throw new NotFoundException('Nenhum preparatório gerado para esta vaga.');
+    return prep;
   }
 
   private async post(form: FormData): Promise<unknown> {
